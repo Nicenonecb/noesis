@@ -37,7 +37,7 @@ def inspect_history(path: Path, tables: tuple[str, ...]) -> None:
     """
     for attempt in range(2):
         try:
-            with tempfile.TemporaryDirectory(prefix="aibrain-doctor-") as temp:
+            with tempfile.TemporaryDirectory(prefix="noesis-doctor-") as temp:
                 target = Path(temp) / path.name
                 shutil.copyfile(path, target)
                 target.chmod(0o600)
@@ -106,7 +106,7 @@ def diagnose(config: Config) -> list[Check]:
             connection.close()
         checks.append(Check("数据库", "ok", f"schema v{version}，一致性检查通过"))
     except (OSError, sqlite3.Error):
-        checks.append(Check("数据库", "fail", "无法读取或结构不完整", "先运行 aibrain init；已有数据时先备份再检查"))
+        checks.append(Check("数据库", "fail", "无法读取或结构不完整", "先运行 noesis init；已有数据时先备份再检查"))
     enabled = config.values["sources"]
     if enabled["claude_code"]:
         checks.append(_source_check("Claude Code", config.source_path("claude_code", "root"), "*.jsonl"))
@@ -162,7 +162,7 @@ def diagnose(config: Config) -> list[Check]:
         Check("辅助功能（M4）", "manual", "未验证 Hammerspoon 授权", "系统设置 → 隐私与安全性 → 辅助功能 → Hammerspoon"),
         Check("自动化 / Apple 事件（M4）", "manual", "未发送 Apple 事件，不触发授权弹窗", "M4 首次运行时允许实际调用方控制浏览器，并在隐私与安全性 → 自动化核对"),
         Check("浏览器 JavaScript（M4）", "manual", "未运行浏览器脚本", "Chrome：显示 → 开发者 → 允许 Apple 事件中的 JavaScript；Safari：开发 → 允许 Apple 事件中的 JavaScript；Arc 在 M4 实测"),
-        Check("OCR（M4）", "ok" if (config.root / "bin/aibrain-ocr").is_file() else "manual", "已发现二进制" if (config.root / "bin/aibrain-ocr").is_file() else "尚未编译；M4 实现"),
+        Check("OCR（M4）", "ok" if (config.root / "bin/noesis-ocr").is_file() else "manual", "已发现二进制" if (config.root / "bin/noesis-ocr").is_file() else "尚未编译；M4 实现"),
         Check("launchd（M5）", "manual", "尚未安装；当前进程的权限不代表定时任务权限", "M5 安装后给 plist 中实际解释器授权，并通过 launchd 实测 Safari 读取"),
     ])
     return checks

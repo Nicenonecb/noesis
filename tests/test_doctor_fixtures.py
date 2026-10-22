@@ -5,9 +5,9 @@ import sqlite3
 
 import pytest
 
-from aibrain.cli import main
-from aibrain.config import initialize
-from aibrain.doctor import Check, diagnose, inspect_history
+from noesis.cli import main
+from noesis.config import initialize
+from noesis.doctor import Check, diagnose, inspect_history
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -63,7 +63,7 @@ def test_jsonl_fixtures_are_parseable_except_deliberate_bad_tail():
 
 def test_doctor_exit_codes_and_secret_safe_output(tmp_path, monkeypatch, capsys):
     root = initialize(tmp_path / "data").root
-    monkeypatch.setattr("aibrain.cli.diagnose", lambda config: [Check("Safari", "fail", "PermissionError"), Check("test", "manual", "token=fake")])
+    monkeypatch.setattr("noesis.cli.diagnose", lambda config: [Check("Safari", "fail", "PermissionError"), Check("test", "manual", "token=fake")])
     assert main(["doctor", "--data-dir", str(root)]) == 0
     assert main(["doctor", "--data-dir", str(root), "--strict"]) == 1
     output = capsys.readouterr().out
@@ -99,9 +99,9 @@ def test_diagnose_sources_and_denied_safari_with_synthetic_home(tmp_path, monkey
             raise PermissionError("synthetic denial")
         original(path, tables)
 
-    monkeypatch.setattr("aibrain.doctor.inspect_history", inspect)
-    monkeypatch.setattr("aibrain.doctor._installed", lambda bundle: bundle in {"Google Chrome.app", "Safari.app"})
-    monkeypatch.setattr("aibrain.doctor.shutil.which", lambda name: None)
+    monkeypatch.setattr("noesis.doctor.inspect_history", inspect)
+    monkeypatch.setattr("noesis.doctor._installed", lambda bundle: bundle in {"Google Chrome.app", "Safari.app"})
+    monkeypatch.setattr("noesis.doctor.shutil.which", lambda name: None)
     checks = diagnose(initialize(home / "data"))
     by_name = {check.name: check for check in checks}
     assert by_name["Claude Code"].status == "ok"
@@ -121,8 +121,8 @@ def test_disabled_sources_are_not_probed(tmp_path, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("disabled sources must not be probed")
 
-    monkeypatch.setattr("aibrain.doctor._source_check", forbidden)
-    monkeypatch.setattr("aibrain.doctor.inspect_history", forbidden)
-    monkeypatch.setattr("aibrain.doctor.subprocess.run", forbidden)
+    monkeypatch.setattr("noesis.doctor._source_check", forbidden)
+    monkeypatch.setattr("noesis.doctor.inspect_history", forbidden)
+    monkeypatch.setattr("noesis.doctor.subprocess.run", forbidden)
     checks = diagnose(config)
     assert not any(check.status == "fail" for check in checks)

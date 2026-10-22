@@ -1,7 +1,7 @@
-# AI-Brain
+# NOESIS · 智穹
 
 在本机采集个人活动，统一成 SQLite 事件，并在后续里程碑生成 Markdown 日志。
-代码位于 `~/code/ai-brain`，数据位于 `~/AI-Brain`；运行时代码只使用 Python 标准库。
+代码位于 `~/code/noesis`，数据位于 `~/NOESIS`；运行时代码只使用 Python 标准库。
 
 **当前仅完成 M0。** 可用命令是 `init`、`doctor`。其他模块为后续里程碑预留，
 不会采集对话、历史记录、截图，不会安装快捷键/定时任务，也不会发起网络请求。
@@ -11,14 +11,14 @@
 本机已创建 Python 3.11 虚拟环境，项目和 pytest 都通过本机缓存离线安装。
 
 ```sh
-cd ~/code/ai-brain
+cd ~/code/noesis
 source .venv/bin/activate
-aibrain init
-aibrain doctor
+noesis init
+noesis doctor
 python -m pytest
 ```
 
-不激活环境也可直接执行 `~/code/ai-brain/.venv/bin/aibrain`。
+不激活环境也可直接执行 `~/code/noesis/.venv/bin/noesis`。
 本阶段没有修改 shell 配置或创建全局命令链接。
 
 已有本地缓存的环境可重建：
@@ -34,7 +34,7 @@ uv pip install --offline --no-build-isolation --python .venv/bin/python -e .
 ## 配置和诊断
 
 `init` 创建 config.toml、goals.yaml 模板、私有数据子目录、events/cursors 表和索引。
-重复运行保留配置、目标与事件。数据目录支持 `--data-dir /绝对路径` 或 AIBRAIN_DATA_DIR；
+重复运行保留配置、目标与事件。数据目录支持 `--data-dir /绝对路径` 或 NOESIS_DATA_DIR；
 自定义目录中的 config.toml.data_dir 必须与其所在目录一致，不允许存放在本代码仓库内。
 
 `doctor` 检查路径、当前解释器、表结构、真实历史库副本和工具可用性。

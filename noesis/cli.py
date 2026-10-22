@@ -12,9 +12,9 @@ from .redact import redact
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="aibrain", description="AI-Brain 本地活动底座（M0）")
+    root = argparse.ArgumentParser(prog="noesis", description="NOESIS · 智穹 本地活动底座（M0）")
     root.add_argument("--version", action="version", version=__version__)
-    root.add_argument("--data-dir", type=Path, help="数据目录（默认 ~/AI-Brain 或 AIBRAIN_DATA_DIR）")
+    root.add_argument("--data-dir", type=Path, help="数据目录（默认 ~/NOESIS 或 NOESIS_DATA_DIR）")
     sub = root.add_subparsers(dest="command", required=True)
     for name, help_text in [("init", "初始化目录、配置与数据库，可重复运行"), ("doctor", "只读检查路径与权限，列出手动操作")]:
         command = sub.add_parser(name, help=help_text)

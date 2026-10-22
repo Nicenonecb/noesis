@@ -1,6 +1,6 @@
 import pytest
 
-from aibrain.redact import redact, redact_value
+from noesis.redact import redact, redact_value
 
 
 @pytest.mark.parametrize("secret,normal", [

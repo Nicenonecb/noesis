@@ -3,8 +3,8 @@ import stat
 
 import pytest
 
-from aibrain.cli import main
-from aibrain.config import ConfigError, data_root, initialize, load_config
+from noesis.cli import main
+from noesis.config import ConfigError, data_root, initialize, load_config
 
 
 def test_init_preserves_configuration_goals_and_private_modes(tmp_path):
@@ -32,7 +32,7 @@ def test_invalid_config_does_not_overwrite(tmp_path):
     with pytest.raises(ConfigError):
         initialize(root)
     assert config.read_text() == "not valid = ["
-    assert not (root / "db/aibrain.sqlite").exists()
+    assert not (root / "db/noesis.sqlite").exists()
 
 
 @pytest.mark.parametrize("old,new", [
@@ -63,7 +63,7 @@ def test_data_dir_mismatch_and_repo_guard(tmp_path):
 
 def test_cli_data_dir_before_or_after_command_and_env(tmp_path, monkeypatch, capsys):
     root = tmp_path / "data"
-    monkeypatch.setenv("AIBRAIN_DATA_DIR", str(tmp_path / "env-data"))
+    monkeypatch.setenv("NOESIS_DATA_DIR", str(tmp_path / "env-data"))
     assert main(["--data-dir", str(root), "init"]) == 0
     assert main(["init", "--data-dir", str(root)]) == 0
     assert main(["init"]) == 0

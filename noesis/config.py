@@ -56,11 +56,11 @@ goals:
 
 
 def data_root(override: str | Path | None = None) -> Path:
-    raw = override or os.environ.get("AIBRAIN_DATA_DIR") or "~/AI-Brain"
+    raw = override or os.environ.get("NOESIS_DATA_DIR") or "~/NOESIS"
     root = Path(raw).expanduser().resolve()
     code_root = Path(__file__).resolve().parents[1]
     if (code_root / "pyproject.toml").exists() and root.is_relative_to(code_root):
-        raise ConfigError("数据目录不能放在 ai-brain 代码仓库中；请使用 ~/AI-Brain。")
+        raise ConfigError("数据目录不能放在 noesis 代码仓库中；请使用 ~/NOESIS。")
     return root
 
 
@@ -71,7 +71,7 @@ class Config:
 
     @property
     def db_path(self) -> Path:
-        return self.root / "db" / "aibrain.sqlite"
+        return self.root / "db" / "noesis.sqlite"
 
     @property
     def timezone(self) -> ZoneInfo:
@@ -91,7 +91,7 @@ def load_config(override: str | Path | None = None) -> Config:
         with (root / "config.toml").open("rb") as handle:
             values = tomllib.load(handle)
     except FileNotFoundError:
-        raise ConfigError("未找到配置文件，请先运行 aibrain init。") from None
+        raise ConfigError("未找到配置文件，请先运行 noesis init。") from None
     except tomllib.TOMLDecodeError:
         # The offending TOML may contain secrets; do not echo it.
         raise ConfigError("config.toml 不是有效的 TOML，请检查语法。") from None

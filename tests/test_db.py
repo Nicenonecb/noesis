@@ -5,9 +5,9 @@ import sqlite3
 
 import pytest
 
-from aibrain.config import initialize
-from aibrain.db import Database
-from aibrain.models import Event, utc_timestamp
+from noesis.config import initialize
+from noesis.db import Database
+from noesis.models import Event, utc_timestamp
 
 
 def event(**kwargs):

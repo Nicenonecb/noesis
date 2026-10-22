@@ -9,8 +9,7 @@ bin/
 .DS_Store
 .env
 .env.*
-# Runtime data belongs outside this repository, in ~/AI-Brain.
-AI-Brain/
+# Runtime data belongs outside this repository, in ~/NOESIS.
 data/
 db/
 daily/

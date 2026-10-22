@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+bin/
+.DS_Store
+.env
+.env.*
+# Runtime data belongs outside this repository, in ~/AI-Brain.
+AI-Brain/
+data/
+db/
+daily/
+captures/
+logs/
+config.toml
+goals.yaml
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+# Only hand-authored synthetic JSONL fixtures may be versioned.
+*.jsonl
+!tests/fixtures/*.jsonl

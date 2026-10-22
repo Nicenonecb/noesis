@@ -1,0 +1,1 @@
+-- M4 placeholder. No hotkeys are registered in M0.

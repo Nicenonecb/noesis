@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "noesis"
 version = "0.1.0"
-description = "NOESIS · 智穹 — local-first personal activity collection"
+description = "NOESIS · 求是 — 从实事中求是，让每一次循环都进到高一级"
 requires-python = ">=3.11"
 dependencies = []
 

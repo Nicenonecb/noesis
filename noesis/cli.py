@@ -12,7 +12,11 @@ from .redact import redact
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="noesis", description="NOESIS · 智穹 本地活动底座（M0）")
+    root = argparse.ArgumentParser(
+        prog="noesis",
+        description="NOESIS · 求是 本地活动底座（M0）",
+        epilog="从实事中求是，让每一次循环都进到高一级",
+    )
     root.add_argument("--version", action="version", version=__version__)
     root.add_argument("--data-dir", type=Path, help="数据目录（默认 ~/NOESIS 或 NOESIS_DATA_DIR）")
     sub = root.add_subparsers(dest="command", required=True)

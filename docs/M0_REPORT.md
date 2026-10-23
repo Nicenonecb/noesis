@@ -14,7 +14,7 @@ M0 脚手架与命令已实现并验证。格式调研已完成本机可访问�
 
 ## 已交付
 
-- 代码仓库：`~/code/noesis`；数据目录：`~/NOESIS`。
+- 代码仓库：`~/Desktop/noesis`；数据目录：`~/NOESIS`。
 - Python 3.11 虚拟环境、pyproject.toml、noesis 命令入口；零运行时第三方依赖。
 - init：创建配置/目标模板、私有目录、events/cursors 表及三组索引；重复运行保留数据。
 - doctor：当前解释器、配置、数据库、会话文件、浏览器历史副本、Git 与权限诊断。
@@ -59,7 +59,7 @@ doctor 默认退出 0 代表“诊断完成”，**不代表所有权限齐全**
 本次实际入口及解析后的二进制为：
 
 ```text
-/Users/justin/code/noesis/.venv/bin/python
+/Users/justin/Desktop/noesis/.venv/bin/python
 /opt/homebrew/Cellar/python@3.11/3.11.15_1/Frameworks/Python.framework/Versions/3.11/bin/python3.11
 ```
 
@@ -91,11 +91,11 @@ M5 的 launchd 必须使用最终 plist 中的实际解释器再验，不能沿�
 ## 使用入口
 
 ```sh
-cd ~/code/noesis
+cd ~/Desktop/noesis
 source .venv/bin/activate
 noesis init
 noesis doctor
 ```
 
-无需激活时可直接执行 `~/code/noesis/.venv/bin/noesis doctor`。
+无需激活时可直接执行 `~/Desktop/noesis/.venv/bin/noesis doctor`。
 下一步：用户确认后开始 M1（Claude Code / Codex 增量采集与真实数据抽查）。

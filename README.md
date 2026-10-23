@@ -3,7 +3,7 @@
 **从实事中求是，让每一次循环都进到高一级**
 
 在本机采集个人活动，统一成 SQLite 事件，并在后续里程碑生成 Markdown 日志。
-代码位于 `~/code/noesis`，数据位于 `~/NOESIS`；运行时代码只使用 Python 标准库。
+代码位于 `~/Desktop/noesis`，数据位于 `~/NOESIS`；运行时代码只使用 Python 标准库。
 
 **当前仅完成 M0。** 可用命令是 `init`、`doctor`。其他模块为后续里程碑预留，
 不会采集对话、历史记录、截图，不会安装快捷键/定时任务，也不会发起网络请求。
@@ -41,14 +41,14 @@
 本机已创建 Python 3.11 虚拟环境，项目和 pytest 都通过本机缓存离线安装。
 
 ```sh
-cd ~/code/noesis
+cd ~/Desktop/noesis
 source .venv/bin/activate
 noesis init
 noesis doctor
 python -m pytest
 ```
 
-不激活环境也可直接执行 `~/code/noesis/.venv/bin/noesis`。
+不激活环境也可直接执行 `~/Desktop/noesis/.venv/bin/noesis`。
 本阶段没有修改 shell 配置或创建全局命令链接。
 
 已有本地缓存的环境可重建：

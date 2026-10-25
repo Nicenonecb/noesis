@@ -5,8 +5,9 @@
 在本机采集个人活动，统一成 SQLite 事件，并在后续里程碑生成 Markdown 日志。
 代码位于 `~/Desktop/noesis`，数据位于 `~/NOESIS`；运行时代码只使用 Python 标准库。
 
-**当前仅完成 M0。** 可用命令是 `init`、`doctor`。其他模块为后续里程碑预留，
-不会采集对话、历史记录、截图，不会安装快捷键/定时任务，也不会发起网络请求。
+**当前已完成 M1。** 可用命令是 `init`、`doctor`、`collect`；支持手动增量采集
+Claude Code / Codex 对话。浏览历史、截图、快捷键、定时任务和 AI 提炼尚未启用。
+运行时代码不会发起网络请求。M1 验收与已知边界见 [M1_REPORT](docs/M1_REPORT.md)。
 
 ## 命名说明
 
@@ -33,8 +34,8 @@
 | 由表及里 | 在证据基础上提炼决策、经验和未解决的问题，再用后续行动结果检验与修正认识。 |
 
 四个阶段是处理理念，不替代 M0–M6 的实施顺序。第一期先建立可靠的采集与整理基础；
-跨事件推理、长期记忆和主动提醒仍属于后续规划。当前仅完成 M0，本文新增命名说明，
-尚未启用四阶段处理流水线。
+跨事件推理、长期记忆和主动提醒仍属于后续规划。当前完成了 M0–M1，
+尚未启用完整的四阶段处理流水线。
 
 ## 本机使用
 
@@ -45,6 +46,7 @@ cd ~/Desktop/noesis
 source .venv/bin/activate
 noesis init
 noesis doctor
+noesis collect
 python -m pytest
 ```
 
@@ -76,6 +78,34 @@ uv pip install --offline --no-build-isolation --python .venv/bin/python -e .
 
 ## 持久化与隐私
 
+### 对话增量采集（M1）
+
+```sh
+noesis collect                         # 按配置采集两类对话
+noesis collect --source claude_code    # 仅 Claude Code
+noesis collect --source codex          # Codex sessions + history 补录
+noesis collect --replay                # 从头回放，按稳定 ID 去重，不改正常游标
+```
+
+首次运行会处理全部已有会话，后续只解析追加的完整行。未结束的尾行留待下次；
+按 inode、长度和已消费字节的 SHA-256 识别轮换、截断和同长度重写。
+为保证重写检测，每次仍会读取旧字节验证指纹，I/O 成本随历史体积增长。
+每个文件的事件和游标一起提交，读取或写入失败时整文件事务回滚。
+
+Claude Code 默认跳过 sidechain/subagents、元消息、工具结果和推理；工具只保留名称。
+Codex 支持 response_item、item_completed 和旧版 event_msg；同回合相同正文按各通道
+出现次数配对，保留单通道内重复发送的相同文本。只剥离已知控制包装，不按关键词删消息。
+助手正文先脱敏，再按配置截断；用户正文保留完整脱敏文本。
+
+history 补录按会话、正文摘要和同一 UTC 秒与 session 消息配对，匹配多少条就移除多少条
+history 副本；迟到的 session 也会补做对账。跨秒不模糊合并，以免吞掉真实重复输入。
+
+输出 JSON 统计及最多 20 条/来源的诊断位置（路径哈希、行号、错误类别），不输出正文。
+`inserted` 是当次插入数，`history_reconciled` 是移除的历史副本数。
+退出码 0 表示完成，1 表示存在失败文件/损坏行，2 表示配置或运行错误。
+未知类型和未找到的可选来源会在统计中提示；解析器升级后可用 `--replay` 重查。
+配置 `[sources]` 中的 `claude_code` / `codex` 开关对显式 `--source` 同样生效。
+
 Event 将时间规范为 UTC、用 sha1(source + "|" + source_id) 去重，capture 强制 high。
 Database 的写入接口统一脱敏正文、标题、URL、raw_ref、metadata 及 cursor 值；
 cursor.key 存原始逻辑键的 SHA-256，避免带秘密的路径在替换后发生键碰撞；
@@ -90,7 +120,7 @@ M6 之前不引入网络代码；M6 可选且必须经用户确认后才能执�
 | 里程碑 | 状态 |
 |---|---|
 | M0 脚手架、init/doctor、格式调研 | 已实现，验收结果见 M0_REPORT |
-| M1 Claude Code / Codex 增量采集 | 等待用户确认后开始 |
+| M1 Claude Code / Codex 增量采集 | 已实现，验收结果见 M1_REPORT |
 | M2 Git | 待实现 |
 | M3 浏览历史 | 待实现，Safari 需授权后补格式验证 |
 | M4 快捷键收藏 / OCR | 待实现 |

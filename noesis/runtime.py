@@ -15,18 +15,24 @@ class AlreadyRunning(Exception):
 
 
 @contextmanager
-def collection_lock(root):
-    """Shared by collect and the future build-daily command. Never unlink it."""
-    private_directory(root / "run")
-    fd = os.open(root / "run/collect.lock", os.O_CREAT | os.O_RDWR, 0o600)
+def file_lock(path, *, blocking=True):
+    private_directory(path.parent)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
         except BlockingIOError:
             raise AlreadyRunning("采集或日志生成正在运行，本次跳过。") from None
         yield
     finally:
         os.close(fd)
+
+
+@contextmanager
+def collection_lock(root):
+    """Shared by collect and build-daily. Never unlink an active lock file."""
+    with file_lock(root/'run/collect.lock',blocking=False):
+        yield
 
 
 class PrivateLogHandler(logging.Handler):

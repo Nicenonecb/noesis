@@ -224,3 +224,9 @@ schema v3 新增 repos。Git numstat 使用 -z 读取以兼容空格、制表符
 
 浏览历史采集共用副本读取器，包含 WAL / journal。游标保存 visit_time + visit_id，
 以及最后一组归一化 URL 和时间，以支持跨运行的连续刷新合并。Arc / Safari 未实机授权的边界仍保留。
+
+## M4 更新（2026-10-26）
+
+收藏 metadata 增加 text_sections（content 中各正文片段的起止位置）、page_url_hash 和截图警告。
+页面原始 URL 仅保存脱敏值与指纹；正文在后台获取，只有页面指纹一致才入库。
+PNG 嵌入链接相对 NOESIS 库根目录；md 使用文件锁和原子重建，避免 OCR / annotate 竞争。

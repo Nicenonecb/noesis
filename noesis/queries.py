@@ -126,6 +126,11 @@ def get_captures(conn, *, start, end):
     return get_events(conn, start=start, end=end, sources=["capture"], kinds=["capture"])
 
 
+def capture_by_id(conn, identity):
+    row=conn.execute("SELECT * FROM events WHERE source='capture' AND source_id=?",(identity,)).fetchone()
+    return _event(row) if row else None
+
+
 def _snippet(event, q):
     for text in (event.title or "", event.content, event.url or ""):
         match = re.search(re.escape(q), text, re.IGNORECASE)

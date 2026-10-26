@@ -54,6 +54,18 @@ def parser() -> argparse.ArgumentParser:
         actions.add_parser(action).add_argument('path',type=Path)
     reproject=sub.add_parser('reproject',help='统一既有事件和会话的项目名')
     reproject.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    capture=sub.add_parser('capture',help='截图收藏，后台识别文字')
+    capture.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    capture.add_argument('--window-id',type=int)
+    capture.add_argument('--app',default='')
+    capture.add_argument('--window-title',default='')
+    capture.add_argument('--region',action='store_true')
+    for command in ('capture-ocr','annotate'):
+        child=sub.add_parser(command)
+        child.add_argument('id')
+        child.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+        if command=='annotate':
+            child.add_argument('--note',required=True)
     for name, help_text in [("init", "初始化目录、配置与数据库，可重复运行"), ("doctor", "只读检查路径与权限，列出手动操作")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS, help="数据目录")
@@ -70,6 +82,16 @@ def main(argv: list[str] | None = None) -> int:
             print(redact(f"✅ 初始化完成：{config.root}（保留已有配置与数据）"))
             return 0
         config = load_config(args.data_dir)
+        if args.command in {'capture','capture-ocr','annotate'}:
+            from .capture.capture import create_capture,enrich_capture,annotate
+            if args.command=='capture':
+                result=create_capture(config,window_id=args.window_id,app=args.app,window_title=args.window_title,region=args.region)
+            elif args.command=='capture-ocr':
+                result=enrich_capture(config,args.id)
+            else:
+                result=annotate(config,args.id,args.note)
+            print(json.dumps(result,ensure_ascii=False))
+            return 0
         if args.command in {'repos','reproject'}:
             from .db import Database
             from . import queries

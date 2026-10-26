@@ -33,15 +33,16 @@ def text_content(content) -> str:
     )
 
 
-def human_text(text: str) -> str:
+def human_text(text: str, strip_tags=None) -> str:
     # Only recognized, delimited control wrappers are stripped. Ordinary mentions
     # of AGENTS.md, environment fields, etc. remain human input.
     text = re.sub(r"(?m)^# AGENTS\.md instructions[^\n]*\n\s*<INSTRUCTIONS>.*?</INSTRUCTIONS>",
                   "", text, flags=re.DOTALL)
-    for tag in ("system-reminder", "environment_context", "external_codex_apps_open_page",
+    for tag in strip_tags if strip_tags is not None else ("system-reminder", "environment_context", "external_codex_apps_open_page",
+                "user_instructions", "permissions instructions",
                 "local-command-caveat", "command-name", "command-message", "command-args",
                 "local-command-stdout", "local-command-stderr"):
-        text = re.sub(rf"<{tag}(?:\s[^>]*)?>.*?</{tag}>", "", text, flags=re.DOTALL)
+        text = re.sub(rf"<{re.escape(tag)}(?:\s[^>]*)?>.*?</{re.escape(tag)}>", "", text, flags=re.DOTALL)
     return text.strip()
 
 
@@ -51,7 +52,7 @@ def make_event(source, identity, role, timestamp, text, session, cwd, path, line
     if not isinstance(timestamp, str):
         raise ValueError("timestamp")
     text = human_text(text) if role == "user" else text.strip()
-    if not text:
+    if not text and not (meta or {}).get("tools"):
         return None
     clean = redact(text)
     metadata = dict(meta or {})
@@ -59,6 +60,7 @@ def make_event(source, identity, role, timestamp, text, session, cwd, path, line
     metadata["text_hash"] = fingerprint(text)
     metadata["session_hash"] = fingerprint(session)
     metadata["truncated"] = role == "assistant" and len(clean) > limit
+    metadata["content_chars"] = len(clean)
     return Event(
         source=source, source_id=identity, kind=f"{role}_msg", ts=timestamp,
         content=truncate(clean, limit) if role == "assistant" else clean,
@@ -156,7 +158,7 @@ def read_file(db, path, source, parse, *, replay=False):
                             continue
                         if event is None:
                             batch_counts["skipped"] += 1
-                        elif db.insert_event(event):
+                        elif (db.merge_assistant(event) if event.meta.get("fragment_id") else db.insert_event(event)):
                             batch_counts["inserted"] += 1
                         else:
                             batch_counts["duplicates"] += 1
@@ -177,6 +179,7 @@ def read_file(db, path, source, parse, *, replay=False):
                             "inode": stat.st_ino, "size": stat.st_size, "mtime": stat.st_mtime_ns,
                             "prefix_hash": digest.hexdigest(), "state": state,
                         })
+                    db.record_session_hint(source, state, path)
                 counts.update(batch_counts)
                 warnings.extend(batch_warnings[:max(0, 20 - len(warnings))])
     except (OSError, sqlite3.Error) as exc:

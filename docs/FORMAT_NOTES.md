@@ -200,3 +200,10 @@ Swift Vision 的 bbox 原点在左下，阅读顺序需转换；OCR 不等于对
 doctor 的 ✅ 只代表对应检查已实测；⚠️ 代表未验证，⚪ 代表未发现可选应用。
 当前 Codex 进程能读到的文件不代表终端、Hammerspoon 或 launchd 都能读到。
 M0 默认 doctor 在诊断完成后退出 0；`--strict` 检测到 ❌ 返回 1，配置/运行失败返回 2。
+
+## M1.1 更新（2026-10-26）
+
+Claude Code assistant 的身份改为 session + message.id（缺少时用 uuid），分块 uuid 的哈希保存在
+metadata 中用于重放去重；原来的按行事件通过 raw_ref 精确迁移。用户身份保持原规则。
+summary / custom-title 用于会话标题，工具摘要和纯工具 assistant 记录保留；sidechain 整文件跳过。
+未知非消息类型计数，不再为新增的外围记录类型报 warning。真实回放 27 文件无警告。

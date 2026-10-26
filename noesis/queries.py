@@ -76,6 +76,27 @@ def get_session_events(conn, session_id, *, source=None):
         f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,id", params)]
 
 
+def get_event(conn, event_id):
+    row = conn.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
+    return _event(row) if row else None
+
+
+def event_created_at(conn, event_id):
+    row = conn.execute('SELECT created_at FROM events WHERE id=?', (event_id,)).fetchone()
+    return row[0] if row else None
+
+
+def legacy_fragment_ids(conn, event):
+    return [row[0] for row in conn.execute(
+        'SELECT id FROM events WHERE source=? AND raw_ref=? AND id<>?',
+        (event.source, event.raw_ref, event.id))]
+
+
+def session_record(conn, source, session_id):
+    row = conn.execute('SELECT * FROM sessions WHERE source=? AND session_id=?', (source, session_id)).fetchone()
+    return _session(row) if row else None
+
+
 def get_captures(conn, *, start, end):
     return get_events(conn, start=start, end=end, sources=["capture"], kinds=["capture"])
 

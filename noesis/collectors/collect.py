@@ -18,6 +18,9 @@ def _collect_source(ctx, name, module, key, *, replay):
 
     def ingest(path, parse):
         try:
+            if name == 'claude_code' and config.values[name]['skip_sidechain'] and claude_code.is_sidechain(path):
+                total['sidechains'] += 1
+                return
             counts, issues = read_file(db, path, name, parse, replay=replay)
             total.update(counts)
             total["completed_files"] += 1

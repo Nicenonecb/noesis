@@ -25,11 +25,13 @@ git = true
 root = "~/.claude/projects"
 skip_sidechain = true
 max_assistant_chars = 4000
+strip_tags = ["system-reminder", "environment_context", "user_instructions", "local-command-caveat", "local-command-stdout", "local-command-stderr"]
 
 [codex]
 sessions_root = "~/.codex/sessions"
 history_file = "~/.codex/history.jsonl"
 max_assistant_chars = 4000
+injected_prefixes = ["<environment_context>", "<user_instructions>", "# AGENTS.md instructions", "<permissions instructions>"]
 
 [browser]
 enabled = ["chrome", "arc", "safari"]

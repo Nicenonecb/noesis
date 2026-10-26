@@ -1,7 +1,7 @@
 """Transactional writes with mandatory redaction; reads live in queries.py."""
 
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -132,13 +132,63 @@ class Database:
         return insert_event(self.connection, event)
 
     def upsert_events(self, events):
-        inserted = skipped = 0
-        for event in events:
-            if self.insert_event(event):
-                inserted += 1
-            else:
-                skipped += 1
-        return inserted, skipped
+        return upsert_events(self.connection, events)
+
+    def replace_event(self, event):
+        """Update a known identity through the same redaction boundary as inserts."""
+        from .queries import event_created_at
+        created_at = event_created_at(self.connection, event.id)
+        self.connection.execute('DELETE FROM events WHERE id=?', (event.id,))
+        self.insert_event(event)
+        if created_at:
+            self.connection.execute('UPDATE events SET created_at=? WHERE id=?', (created_at, event.id))
+
+    def merge_assistant(self, event):
+        from .queries import get_event, legacy_fragment_ids
+        old = get_event(self.connection, event.id)
+        fragment = event.meta['fragment_id']
+        self.delete_events(legacy_fragment_ids(self.connection, event))
+        if old and fragment in old.meta.get('fragment_ids', []):
+            return False
+        limit = event.meta['max_chars']
+        incoming = event.content[:min(event.meta['content_chars'], limit)]
+        if old and old.meta.get('fragment_ids'):
+            previous_chars = old.meta['content_chars']
+            separator = '\n' if previous_chars and event.meta['content_chars'] else ''
+            full_chars = previous_chars + len(separator) + event.meta['content_chars']
+            retained = old.content[:min(previous_chars, limit)]
+            if previous_chars < limit:
+                retained = (retained + separator + incoming)[:limit]
+            meta = old.meta | event.meta | {
+                'content_chars': full_chars,
+                'fragment_ids': old.meta['fragment_ids'] + [fragment],
+                'tools': old.meta.get('tools', []) + event.meta.get('tools', []),
+            }
+            event = replace(event, ts=min(old.ts, event.ts), raw_ref=old.raw_ref, content=retained, meta=meta)
+        else:
+            full_chars = event.meta['content_chars']
+            event = replace(event, content=incoming, meta=event.meta | {'fragment_ids': [fragment]})
+        content = event.content[:limit]
+        if full_chars > limit:
+            content += f'…[truncated {full_chars - limit} chars]'
+        event = replace(event, content=content, meta=event.meta | {'truncated': full_chars > limit})
+        if old:
+            self.replace_event(event)
+        else:
+            self.insert_event(event)
+        return old is None
+
+    def record_session_hint(self, source, state, path):
+        from .queries import session_record
+        from .projects import resolve_project
+        if not state.get('session') or not state.get('started_at'):
+            return
+        current = session_record(self.connection, source, redact(state['session']))
+        session = current or Session(source, state['session'], state['started_at'], state['ended_at'])
+        self.upsert_session(replace(session, title=state.get('title') or session.title,
+                                    cwd=state.get('cwd') or session.cwd,
+                                    project=resolve_project(state.get('cwd')) or session.project,
+                                    raw_path=str(path)))
 
     def update_event_meta(self, event_id, patch):
         update_event_meta(self.connection, event_id, patch)

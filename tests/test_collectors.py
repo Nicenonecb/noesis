@@ -40,13 +40,15 @@ def user(identity="one", text="你好", **extra):
 
 
 def test_fixtures_filter_dedup_and_history(config):
-    shutil.copy(FIXTURES / "claude_code.jsonl", config.source_path("claude_code", "root"))
+    write(config.source_path("claude_code", "root") / "claude_code.jsonl",
+          [record for record in map(json.loads, (FIXTURES / "claude_code.jsonl").read_text().splitlines())
+           if not record.get("isSidechain")])
     for fixture in ["codex_current.jsonl", "codex_legacy_candidate.jsonl"]:
         shutil.copy(FIXTURES / fixture, config.source_path("codex", "sessions_root"))
     shutil.copy(FIXTURES / "codex_history.jsonl", config.source_path("codex", "history_file"))
     report = collect(config)
     data = rows(config)
-    assert len([row for row in data if row["source"] == "claude_code"]) == 4
+    assert len([row for row in data if row["source"] == "claude_code"]) == 5
     assert len([row for row in data if row["source"] == "codex"]) == 8
     assert sum(row["content"] == "给示例项目增加离线初始化命令。" for row in data) == 2
     joined = json.dumps(data, ensure_ascii=False)
@@ -54,7 +56,7 @@ def test_fixtures_filter_dedup_and_history(config):
         assert forbidden not in joined
     assert report["codex"]["history_reconciled"] == 1
     assert report["codex"]["unknown_records"] == 1
-    assert report["claude_code"]["unknown_records"] == 1
+    assert report["claude_code"].get("unknown_records", 0) == 0
     second = collect(config)
     assert not any(result.get("inserted") for result in second.values())
     assert rows(config) == data

@@ -66,9 +66,9 @@ def _installed(bundle: str) -> bool:
 
 
 def launchd_checks(config):
-    from .install import LABELS
+    from .install import managed_labels,MORNING_LABEL,morning_app
     checks=[]
-    for label in LABELS:
+    for label in managed_labels(config):
         path=Path.home()/'Library/LaunchAgents'/(label+'.plist')
         if not path.exists():
             checks.append(Check(label,'manual','未安装','运行 scripts/install.sh'))
@@ -76,15 +76,18 @@ def launchd_checks(config):
         try:
             with path.open('rb') as handle:info=plistlib.load(handle)
             arguments=info['ProgramArguments']
-            if str(config.root) not in arguments:
+            if label==MORNING_LABEL:
+                if arguments != [str(morning_app(config)/'Contents/MacOS/NOESISMorning')]:
+                    raise ValueError('wrong morning executable')
+            elif str(config.root) not in arguments:
                 checks.append(Check(label,'manual','任务使用其他数据目录','使用正确 --data-dir 检查或重新安装'))
                 continue
             result=subprocess.run(['launchctl','print',f'gui/{os.getuid()}/{label}'],capture_output=True,text=True,timeout=5)
             match=re.search(r'last exit code = (\d+)',result.stdout)
             code=int(match[1]) if match else None
-            python=(Path(arguments[0]).parent/'python').resolve()
+            executable=Path(arguments[0]).resolve() if label==MORNING_LABEL or '-I' in arguments else (Path(arguments[0]).parent/'python').resolve()
             ok=result.returncode==0 and code in (None,0)
-            checks.append(Check(label,'ok' if ok else 'fail',f'已加载={result.returncode==0}；上次退出码={code}；实际 Python：{python}',
+            checks.append(Check(label,'ok' if ok else 'fail',f'已加载={result.returncode==0}；上次退出码={code}；执行程序：{executable}',
                                 '' if ok else '查看 logs/launchd-*.log；修复来源权限后重新运行采集'))
         except (OSError,ValueError,KeyError,plistlib.InvalidFileException,subprocess.SubprocessError):
             checks.append(Check(label,'fail','任务配置或状态不可读','重新运行 scripts/install.sh'))

@@ -1,1 +1,1 @@
-"""M6: optional AI digest, requiring explicit milestone authorization."""
+"""M6: opt-in AI morning briefs and local macOS notifications."""

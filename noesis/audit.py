@@ -34,8 +34,9 @@ def scan(config, conn):
             events.append(clean)
             for name in (*TEXT_FIELDS,'meta'):
                 if getattr(clean,name)!=getattr(event,name):locations.append(f'event:{event.id}:{name}')
-    for directory in ('daily','captures'):
-        for path in sorted((config.root/directory).rglob('*.md')):
+    for directory in ('daily','captures','briefings'):
+        for path in sorted((config.root/directory).rglob('*')):
+            if not path.is_file() or path.suffix not in {'.md','.html','.json'}:continue
             text=path.read_text();clean=redact(text)
             if clean==text:continue
             files.append((path,clean))

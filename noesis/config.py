@@ -61,9 +61,19 @@ discover_from_sessions = true
 [capture]
 hotkey = "alt+cmd+s"
 ask_note = true
+
+[digest]
+enabled = false
+model = "deepseek-flash"
+generate_after = "00:30"
+notify_on_unlock = true
+max_input_chars = 60000
+max_events = 240
+max_tokens = 6000
+request_timeout = 90
 '''
 
-GOALS_TEMPLATE = '''# M6 使用；仅为模板，尚未启用 AI 或网络调用。
+GOALS_TEMPLATE = '''# 晨报目标模板；只采用 active: true 的目标。
 goals:
   - name: "示例目标（请替换）"
     description: "希望推进的事情"
@@ -142,6 +152,13 @@ def load_config(override: str | Path | None = None) -> Config:
     if set(values['browser']['enabled']) - {p['name'] for p in values['browser']['profiles_glob']}:
         raise ConfigError('browser.enabled 包含没有配置路径的浏览器。')
     import re
+    for key in ('generate_after',):
+        if not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', values['digest'][key]):
+            raise ConfigError(f'digest.{key} 必须是 HH:MM。')
+    if values['digest']['model'] != 'deepseek-flash':
+        raise ConfigError('当前晨报仅接入 DeepSeek deepseek-flash。')
+    if not 8000 <= values['digest']['max_input_chars'] <= 200000 or not 1 <= values['digest']['max_events'] <= 1000:
+        raise ConfigError('晨报输入范围：8000–200000 字符、1–1000 条事件。')
     try:
         for pattern in values['browser']['blacklist_url_regex']:
             re.compile(pattern)
@@ -174,7 +191,7 @@ def initialize(override: str | Path | None = None) -> Config:
     private_directory(root)
     write_template(root / "config.toml", default_config(root))
     config = load_config(root)
-    for name in ("db", "daily", "captures", "logs", "bin", "run"):
+    for name in ("db", "daily", "captures", "briefings", "logs", "bin", "run"):
         private_directory(root / name)
     write_template(root / "goals.yaml", GOALS_TEMPLATE)
     with Database(config.db_path):

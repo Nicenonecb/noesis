@@ -76,6 +76,20 @@ def parser() -> argparse.ArgumentParser:
     audit=sub.add_parser('audit-redaction',help='仅报告脱敏命中位置，可修复并重建 Markdown')
     audit.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     audit.add_argument('--fix',action='store_true')
+    digest=sub.add_parser('digest',help='用 DeepSeek 生成指定完整日期的晨报')
+    digest.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    digest.add_argument('--date',default='yesterday')
+    digest.add_argument('--force',action='store_true',help='重新调用模型，替换已有晨报')
+    model=sub.add_parser('digest-check',help='检查钥匙串与官方模型接口')
+    model.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    morning=sub.add_parser('morning-run',help='按计划生成晨报；解锁后请求展示')
+    morning.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    morning.add_argument('--unlocked',action='store_true')
+    morning.add_argument('--unlock-event',action='store_true',help='原生观察器报告一次真实解锁，可补一次临时故障重试')
+    ack=sub.add_parser('morning-ack',help='由本机晨报窗口确认已经展示')
+    ack.add_argument('date')
+    ack.add_argument('--failure',action='store_true')
+    ack.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     for name, help_text in [("init", "初始化目录、配置与数据库，可重复运行"), ("doctor", "只读检查路径与权限，列出手动操作")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS, help="数据目录")
@@ -93,6 +107,26 @@ def main(argv: list[str] | None = None) -> int:
             print(redact(f"✅ 初始化完成：{config.root}（保留已有配置与数据）"))
             return 0
         config = load_config(args.data_dir)
+        if args.command in {'digest','digest-check','morning-run','morning-ack'}:
+            from datetime import date,datetime
+            from .digest import client
+            from .digest.digest import generate
+            from .digest.schedule import morning_run,acknowledge
+            try:
+                if args.command=='digest-check':
+                    result=client.check_model()
+                elif args.command=='digest':
+                    selected=datetime.now(config.timezone).date()-timedelta(days=1) if args.date=='yesterday' else date.fromisoformat(args.date)
+                    result=generate(config,selected,force=args.force)
+                elif args.command=='morning-ack':
+                    result=acknowledge(config,args.date,failure=args.failure)
+                else:
+                    result=morning_run(config,unlocked=args.unlocked or args.unlock_event,unlock_event=args.unlock_event)
+                print(json.dumps(result,ensure_ascii=False))
+                return 1 if result.get('status')=='failed' else 0
+            except client.DigestError as exc:
+                print(json.dumps({'status':'failed','error':str(exc)},ensure_ascii=False))
+                return 1
         if args.command in {'build-daily','daily-run'}:
             from .render.daily import build_daily
             collected=None

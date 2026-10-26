@@ -14,3 +14,11 @@ def atomic_write(path, content):
         os.replace(temporary,path)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def write_if_changed(path, content):
+    data = content.encode('utf-8') if isinstance(content, str) else content
+    if path.exists() and path.read_bytes() == data:
+        return False
+    atomic_write(path, data)
+    return True

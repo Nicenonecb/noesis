@@ -1,10 +1,12 @@
 """Local morning report, rendered from validated data without remote assets or scripts."""
 
-from html import escape
+from datetime import datetime
+from html import escape, unescape
 import json
 
-from ..files import atomic_write
+from ..files import write_if_changed
 from ..capture.render import single_line
+from ..render.markdown import export_markdown, render_markdown
 
 LABELS = {'completed': '昨日成果', 'progress': '进行中的工作', 'unfinished': '未完成与待确认', 'priorities': '今日建议 · 待你确认'}
 CSS = '''body{margin:0;background:#f4f3ed;color:#20342c;font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
@@ -13,8 +15,21 @@ main{max-width:960px;margin:auto;padding:40px 24px}header{border-bottom:1px soli
 .muted{color:#65766b;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 section{padding:24px;background:white;border:1px solid #dce2d8;border-radius:14px}.focus{background:#e6efdf;border-color:#aec5a0}
 ul{padding-left:22px;margin-bottom:0}li{margin:12px 0}a{color:#39724d}summary{cursor:pointer;font-weight:600}
-details{margin-top:24px;padding:20px;background:#fff;border-radius:12px}.evidence{padding:14px 0;border-top:1px solid #e1e5de}
-pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px;line-height:1.65;color:#47584d}footer{margin-top:22px}
+details{margin-top:24px;padding:20px;background:#fff;border-radius:12px}.evidence{padding:24px 0;border-top:1px solid #e1e5de;scroll-margin-top:24px}
+.evidence-heading{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.evidence-title{font-weight:600;margin:16px 0 10px}
+.markdown-body{min-width:0;overflow-wrap:anywhere}.markdown-body>:first-child{margin-top:0}.markdown-body>:last-child{margin-bottom:0}
+.markdown-body p{margin:12px 0}.markdown-body h1,.markdown-body h2{font-size:22px;margin:24px 0 12px}
+.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:18px;margin:20px 0 10px}
+.markdown-body ul,.markdown-body ol{padding-left:24px;margin:10px 0}.markdown-body li{margin:5px 0}
+.markdown-body blockquote{margin:16px 0;padding:2px 16px;border-left:3px solid #9cb590;background:#f4f7f0;color:#50634f}
+.markdown-body code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:#eef1e9;padding:2px 5px;border-radius:4px}
+.markdown-body pre{margin:16px 0;padding:16px;background:#eef1e9;border:1px solid #dce2d8;border-radius:8px;overflow-x:auto;white-space:pre}
+.markdown-body pre code{background:none;padding:0;border-radius:0;font-size:13px;line-height:1.6}
+.markdown-body table{display:block;overflow-x:auto;border-collapse:collapse;max-width:100%;font-size:14px;margin:16px 0}
+.markdown-body th,.markdown-body td{border:1px solid #d5decf;padding:8px 12px;text-align:left}.markdown-body th{background:#eef3e7}
+.markdown-body hr{border:0;border-top:1px solid #dce2d8;margin:22px 0}.markdown-body .task-list-item{list-style:none}
+.markdown-body .task-list-item-checkbox{margin:0 7px 0 -18px;accent-color:#507b48}.references{margin-top:8px;font-size:13px}
+.image-reference{color:#65766b;font-size:14px}.grid section{min-width:0}footer{margin-top:22px}
 @media(max-width:700px){.grid{grid-template-columns:1fr}h1{font-size:28px}main{padding:24px 16px}}'''
 
 
@@ -30,35 +45,58 @@ def write_briefing(config, record):
         caveat += ' 来源采集未全部成功：' + '、'.join(unhealthy) + '。'
     md = ['---', 'type: morning-briefing', 'date: ' + day,
           'source_date: ' + record['source_day'], 'model: ' + json.dumps(record['model']), '---',
-          f'# {day} 晨报', '', result['summary'], '', metadata, '', caveat, '']
+          f'# {day} 晨报', '', export_markdown(result['summary'], 'summary'), '', metadata, '', caveat, '']
     html = ['<!doctype html><html lang="zh-CN"><meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width,initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">',
             f'<title>NOESIS 晨报 · {day}</title><style>{CSS}</style><main>',
             f'<header><div class="brand">NOESIS · 求是 / MORNING BRIEF</div><h1>{day}，从昨天继续。</h1>',
-            f'<p>{escape(result["summary"])}</p><div class="muted">{escape(metadata)}</div></header><div class="grid">']
+            f'<div class="markdown-body">{render_markdown(result["summary"], "summary")}</div>'
+            f'<div class="muted">{escape(metadata)}</div></header><div class="grid">']
     for key in ('priorities', 'completed', 'progress', 'unfinished'):
         md += ['## ' + LABELS[key], '']
         html += [f'<section class="{"focus" if key == "priorities" else ""}"><h2>{LABELS[key]}</h2><ul>']
         if not result[key]:
             md.append('暂无足够依据。')
             html.append('<li class="muted">暂无足够依据。</li>')
-        for item in result[key]:
+        for index, item in enumerate(result[key]):
             refs = ' '.join(f'<a href="#{ref}">[{ref}]</a>' for ref in item['refs'])
-            html.append(f'<li>{escape(item["text"])} <small>{refs}</small></li>')
-            md.append('- ' + single_line(item['text']) + ' ' + ' '.join(f'[{ref}](#{ref.lower()})' for ref in item['refs']))
+            html.append(f'<li><div class="markdown-body">{render_markdown(item["text"], f"{key}-{index}")}</div>'
+                        f'<div class="references">{refs}</div></li>')
+            lines = export_markdown(item['text'], f'{key}-{index}').split('\n')
+            md.append('- ' + lines[0] + ''.join('\n  ' + line for line in lines[1:]) + '\n\n  '
+                      + ' '.join(f'[{ref}](#{ref.lower()})' for ref in item['refs']))
         md.append('')
         html.append('</ul></section>')
     html.append('</div><details open><summary>查看来源摘录</summary>')
     md += ['## 来源摘录', '']
     for item in record['evidence']:
-        label = ' · '.join(str(item.get(key) or '') for key in ('source', 'project', 'time'))
-        html.append(f'<div class="evidence" id="{item["id"]}"><strong>{item["id"]}</strong> '
-                    f'<span class="muted">{escape(label)}</span><p>{escape(item["title"])}</p>'
-                    f'<pre>{escape(item["text"])}</pre></div>')
-        md += ['### ' + item['id'], '', single_line(label), '', single_line(item['title']), '',
-               item['text'].replace('```', 'ʼʼʼ'), '']
+        timestamp = datetime.fromisoformat(item['time']).astimezone(config.timezone).strftime('%Y-%m-%d %H:%M')
+        source = {'codex': 'Codex', 'claude_code': 'Claude Code', 'browser_history': '浏览历史', 'git': 'Git', 'capture': '收藏'}.get(item['source'], item['source'])
+        label = ' · '.join(str(value) for value in (source, item.get('project'), timestamp) if value)
+        title = unescape(item['title']).strip()
+        text = item['text'].strip('\r\n')
+        if item['source'] == 'browser_history':
+            text = unescape(text)
+        if ' '.join(title.split()) == ' '.join(text.split()):
+            if item['source'] == 'browser_history':
+                text = ''
+            else:
+                title = ''  # Keep Markdown semantics when a message repeats its title.
+        html.append(f'<article class="evidence" id="{item["id"]}"><div class="evidence-heading"><strong>{item["id"]}</strong>'
+                    f'<span class="muted">{escape(label)}</span></div>')
+        md += ['### ' + item['id'], '', single_line(label), '']
+        if title:
+            html.append(f'<p class="evidence-title">{escape(title)}</p>')
+            md += [single_line(title), '']
+        if text:
+            html.append(f'<div class="markdown-body">{render_markdown(text, item["id"])}</div>')
+            md += [export_markdown(text, item['id']), '']
+        if item.get('excerpt_truncated'):
+            html.append('<p class="muted">此处为截断摘录。</p>')
+            md += ['*此处为截断摘录。*', '']
+        html.append('</article>')
     html += ['</details><footer class="muted">' + escape(caveat) + '</footer></main></html>']
     root = config.root / 'briefings' / day
-    atomic_write(root.with_suffix('.md'), '\n'.join(md))
-    atomic_write(root.with_suffix('.html'), '\n'.join(html))
+    write_if_changed(root.with_suffix('.md'), '\n'.join(md))
+    write_if_changed(root.with_suffix('.html'), '\n'.join(html))

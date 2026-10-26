@@ -18,6 +18,9 @@ noesis = "noesis.cli:main"
 [tool.setuptools.packages.find]
 include = ["noesis*"]
 
+[tool.setuptools.package-data]
+"noesis._vendor.mistune" = ["LICENSE", "README.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

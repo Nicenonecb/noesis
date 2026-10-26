@@ -129,6 +129,12 @@ final class MorningApp: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
+        if navigationAction.navigationType == .linkActivated,
+           let url = url, ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
         decisionHandler(url?.isFileURL == true && url?.path.hasPrefix(root + "/briefings/") == true ? .allow : .cancel)
     }
 

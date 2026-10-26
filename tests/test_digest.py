@@ -67,11 +67,15 @@ def test_generate_cache_repair_force_and_escaped_html(config, monkeypatch):
     first = generate(config, day)
     path = Path(first['path'])
     html = path.read_text()
-    assert '<script>' not in html and '<img ' not in html and 'sk-' not in html
+    assert '<script>' not in html and '<img ' not in html
+    assert all('sk-' + letter * 24 not in html for letter in ('X', 'Y'))
     assert '&lt;script&gt;' in html and "default-src 'none'" in html
     before = path.stat().st_mtime_ns
     assert generate(config, day)['status'] == 'cached'
     assert path.stat().st_mtime_ns == before and len(calls) == 1
+    path.write_text('<pre>old renderer</pre>')
+    assert generate(config, day)['status'] == 'cached'
+    assert path.read_text() == html and len(calls) == 1
     path.unlink()
     assert generate(config, day)['status'] == 'cached' and path.exists() and len(calls) == 1
     generate(config, day, force=True)
@@ -218,6 +222,20 @@ def test_installed_runtime_does_not_need_the_desktop_checkout(config, tmp_path):
                             cwd=tmp_path, capture_output=True, text=True, check=True,
                             env={'PATH':'/usr/bin:/bin', 'PYTHONPATH':'/does/not/exist'})
     assert result.stdout.strip() == '0.1.0'
+    # Exercise the packaged Markdown parser, not only the CLI --version path.
+    day = date(2026, 10, 22)
+    generated = generate(config, day)
+    config_path = config.root / 'config.toml'
+    config_path.write_text(config_path.read_text().replace('[digest]\nenabled = false', '[digest]\nenabled = true'))
+    Path(generated['path']).unlink()
+    result = subprocess.run([str(config.root / 'bin/noesis'), 'digest', '--date', day.isoformat(), '--data-dir', str(config.root)],
+                            cwd=tmp_path, capture_output=True, text=True, check=True,
+                            env={'PATH':'/usr/bin:/bin', 'PYTHONPATH':'/does/not/exist'})
+    assert json.loads(result.stdout)['status'] == 'cached'
+    assert Path(generated['path']).exists()
+    import zipfile
+    with zipfile.ZipFile(config.root / 'bin/noesis.pyz') as archive:
+        assert 'noesis/_vendor/mistune/LICENSE' in archive.namelist()
 
 
 @pytest.mark.parametrize('field,value', [('generate_after','24:30'), ('generate_after','0:30'), ('model','unknown')])

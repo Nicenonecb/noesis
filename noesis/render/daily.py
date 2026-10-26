@@ -12,7 +12,7 @@ from ..runtime import collection_lock, run_logger
 from ..timeutils import day_range
 from ..redact import redact
 from ..capture.render import single_line
-from ..files import atomic_write
+from ..files import write_if_changed
 
 LABELS={'claude_code':'Claude Code','codex':'Codex','git':'Git','browser_history':'浏览','capture':'收藏'}
 
@@ -108,10 +108,7 @@ def render_day(conn, day, tz):
 def write_day(config, conn, day):
     path=config.root/'daily'/f'{day.isoformat()}.md'
     content=render_day(conn,day,config.timezone)
-    if path.exists() and path.read_text()==content:
-        return False
-    atomic_write(path,content)
-    return True
+    return write_if_changed(path,content)
 
 
 def build_daily(config, *, day=None, catch_up=None):

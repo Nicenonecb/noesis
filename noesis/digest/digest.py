@@ -101,8 +101,9 @@ def generate(config, day, *, force=False):
     with file_lock(config.root / 'run/digest.lock', blocking=False), run_logger(config) as logger:
         if target.exists() and not force:
             record = json.loads(target.read_text())
-            if not all(target.with_suffix(suffix).exists() for suffix in ('.md', '.html')):
-                write_briefing(config, record)  # Repair without another paid request.
+            # Re-render cached model data so renderer fixes also reach old reports.
+            # The writer compares bytes and preserves unchanged files/mtimes.
+            write_briefing(config, record)
             return {'status': 'cached', 'delivery_day': delivery, 'path': str(target.with_suffix('.html'))}
         payload, health = snapshot(config, day)
         if payload['evidence']:

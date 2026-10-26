@@ -63,6 +63,8 @@ def install_runtime(config,project):
         archive.writestr('__main__.py','from noesis.cli import main\nraise SystemExit(main())\n')
         for path in sorted((project/'noesis').rglob('*.py')):
             archive.write(path,path.relative_to(project).as_posix())
+        for path in sorted((project/'noesis/_vendor').rglob('LICENSE')):
+            archive.write(path,path.relative_to(project).as_posix())
     bundle=config.root/'bin/noesis.pyz'
     atomic_write(bundle,output.getvalue())
     executable=config.root/'bin/noesis'

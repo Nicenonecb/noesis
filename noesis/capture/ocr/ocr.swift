@@ -3,6 +3,10 @@ import AppKit
 import Vision
 
 let started = ProcessInfo.processInfo.systemUptime
+if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--version" {
+    print("{\"version\":1}")
+    exit(0)
+}
 func fail() -> Never {
     FileHandle.standardError.write(Data("OCR failed\n".utf8))
     exit(1)

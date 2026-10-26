@@ -5,11 +5,13 @@
 在本机采集个人活动，统一成 SQLite 事件，并在后续里程碑生成 Markdown 日志。
 代码位于 `~/Desktop/noesis`，数据位于 `~/NOESIS`；运行时代码只使用 Python 标准库。
 
-**当前已有 M1 对话采集，并完成新版计划的 M1.0 公共层补强。** 可用命令是
-`init`、`doctor`、`collect`、`stats`、`search`；支持手动增量采集与检索
-Claude Code / Codex 对话。浏览历史、截图、快捷键、定时任务和 AI 提炼尚未启用。
-运行时代码不会发起网络请求。原 M1 验收见 [M1_REPORT](docs/M1_REPORT.md)，
-本次公共层交付及新版计划的剩余差异见 [M1.0 报告](docs/reports/M1.0.md)。
+**M1–M5 已实现。** 本地采集 Claude Code / Codex 对话、Git 提交和浏览历史，
+支持中文搜索、截图收藏、Vision OCR 与按项目组织的每日日志。
+Python 运行时只用标准库；截图、OCR、快捷键和定时任务依赖 macOS。
+M6 AI 提炼与 M7 前端不在本次范围，应用运行时不发起网络请求。
+
+阶段验收、修复过的 bug 和待人工验证项见 [交付总览](docs/reports/DELIVERY.md)。
+快捷键需要安装并授权 Hammerspoon；Safari 需要完全磁盘访问权限。
 
 ## 命名说明
 
@@ -41,105 +43,100 @@ Claude Code / Codex 对话。浏览历史、截图、快捷键、定时任务和
 
 ## 本机使用
 
-本机已创建 Python 3.11 虚拟环境，项目和 pytest 都通过本机缓存离线安装。
-
 ```sh
 cd ~/Desktop/noesis
 source .venv/bin/activate
 noesis init
 noesis doctor
 noesis collect
-python -m pytest
-```
-
-不激活环境也可直接执行 `~/Desktop/noesis/.venv/bin/noesis`。
-本阶段没有修改 shell 配置或创建全局命令链接。
-
-已有本地缓存的环境可重建：
-
-```sh
-uv venv --offline --python /opt/homebrew/bin/python3.11 .venv
-uv pip install --offline --python .venv/bin/python setuptools pytest
-uv pip install --offline --no-build-isolation --python .venv/bin/python -e .
-```
-
-缓存不全时应停止并说明缺失依赖，不自动联网安装。
-
-## 配置和诊断
-
-`init` 创建 config.toml、goals.yaml 模板、私有数据子目录，以及事件、游标、会话、
-采集运行记录和全文索引。已有数据库通过事务迁移到 schema v2，保留旧事件和游标。
-重复运行保留配置、目标与事件。数据目录支持 `--data-dir /绝对路径` 或 NOESIS_DATA_DIR；
-自定义目录中的 config.toml.data_dir 必须与其所在目录一致，不允许存放在本代码仓库内。
-
-`doctor` 检查路径、当前解释器、表结构、真实历史库副本和工具可用性。
-它不弹系统权限框、不启动浏览器、不采集数据。默认“诊断完成”返回 0；
-`doctor --strict` 有 ❌ 时返回 1，配置/运行错误返回 2。⚠️ 表示需要手动验证，不能视为已授权。
-
-本机 Safari 读取被拒绝，Arc 与 Hammerspoon 未检测到。手动事项集中在
-`docs/M0_REPORT.md`，实际格式与尚未验证的假设见 `docs/FORMAT_NOTES.md`。
-
-## 持久化与隐私
-
-### 对话增量采集（M1）
-
-```sh
-noesis collect                         # 按配置采集两类对话
-noesis collect --source claude_code    # 仅 Claude Code
-noesis collect --source codex          # Codex sessions + history 补录
-noesis collect --replay                # 从头回放，按稳定 ID 去重，不改正常游标
-noesis stats                          # 来源数量、今天入库数、最近运行状态
-noesis search "数据库"                 # 本地全文搜索，返回带高亮的摘录
+noesis stats
+noesis search "数据库"
 noesis search "索引" --source codex --limit 20
 ```
 
-首次运行会处理全部已有会话，后续只解析追加的完整行。未结束的尾行留待下次；
-按 inode、长度和已消费字节的 SHA-256 识别轮换、截断和同长度重写。
-为保证重写检测，每次仍会读取旧字节验证指纹，I/O 成本随历史体积增长。
-每 500 条完整源记录的事件与游标一起提交，读取或写入失败时回滚当前批次，
-已完成的批次保留，下次从该检查点继续。每批写入前复核该批字节，防止读取期间改写。
-`collect` 使用 `run/collect.lock` 防止并发启动；竞争锁的进程打印一行提示并以 0 退出。
-采集摘要写入私有 `logs/noesis-YYYY-MM-DD.log`，每个来源独立记录运行状态。
+数据默认位于 `~/NOESIS`；可通过 `--data-dir` 或 `NOESIS_DATA_DIR` 指定其他目录。
+数据目录不能放进代码仓库。用 Obsidian 打开该目录作为库即可浏览 Markdown 和截图。
 
-Claude Code 默认跳过 sidechain/subagents、元消息、工具结果和推理；工具只保留名称。
-Codex 支持 response_item、item_completed 和旧版 event_msg；同回合相同正文按各通道
-出现次数配对，保留单通道内重复发送的相同文本。只剥离已知控制包装，不按关键词删消息。
-助手正文先脱敏，再按配置截断并附加 `…[truncated N chars]`；该说明不占正文字符额度。
-用户正文保留完整脱敏文本。
+```sh
+noesis collect --source claude_code --backfill 7d
+noesis collect --source codex --backfill all --dry-run
+noesis collect --source git
+noesis collect --source browser_history
+noesis collect --replay
+noesis repos list
+noesis repos add /绝对路径/仓库
+noesis repos disable /绝对路径/仓库
+noesis reproject
+noesis build-daily --date yesterday
+noesis build-daily --catch-up 7
+noesis daily-run --catch-up 7
+noesis audit-redaction
+noesis audit-redaction --fix
+```
 
-history 补录按会话、正文摘要和同一 UTC 秒与 session 消息配对，匹配多少条就移除多少条
-history 副本；迟到的 session 也会补做对账。跨秒不模糊合并，以免吞掉真实重复输入。
+`--backfill` 忽略旧游标并回填指定窗口，`--replay` 重读对话但保留其正常游标。
+`--dry-run` 在内存数据库副本上执行解析与去重，不修改持久化数据或运行日志。
+首次普通采集可能导入来源的全部历史；可先用带时间窗口的 dry-run 查看数量。
+`stats` 的今天新增按入库时间统计。
 
-输出 JSON 统计及最多 20 条/来源的诊断位置（路径哈希、行号、错误类别），不输出正文。
-`inserted` 是当次插入数，`history_reconciled` 是移除的历史副本数。
-退出码 0 表示完成或已有采集进程而跳过，1 表示某来源 partial / failed（包括未知记录、
-损坏行、缺失来源或失败文件），2 表示配置或运行错误。
-未知类型和未找到的可选来源会在统计中提示；解析器升级后可用 `--replay` 重查。
-配置 `[sources]` 中的 `claude_code` / `codex` 开关对显式 `--source` 同样生效。
+退出码 0 表示完成或被并发锁跳过，1 表示部分来源失败或审计有未处理命中，2 表示配置或运行错误。
+`daily-run` 即使部分来源失败也生成日志，并通过退出码保留失败状态。
 
-Event 将时间规范为 UTC、用 sha1(source + "|" + source_id) 去重，capture 强制 high。
-Database 的写入接口统一脱敏正文、标题、URL、raw_ref、metadata 及 cursor 值；
-cursor.key 存原始逻辑键的 SHA-256，避免带秘密的路径在替换后发生键碰撞；
-调用方须在同一事务内写事件与 cursor。会话摘要与 metadata 局部更新同样经过脱敏。
-全文索引用 FTS5 trigram，少于 3 个字符时自动使用字面量 LIKE 匹配；`doctor` 检查实际支持。
-脱敏是模式匹配，无法保证识别所有自由文本中的秘密，
-也不会处理截图像素。日志或 Markdown 的后续写入必须复用脱敏模块，先脱敏后截断。
+## 截图收藏
 
-fixture 全部合成；仓库忽略 SQLite、截图目录、日志、运行配置、bin 及虚拟环境。
-M6 之前不引入网络代码；M6 可选且必须经用户确认后才能执行。
+安装集成后，在 Hammerspoon 中重载配置：
 
-## 里程碑
+- `⌥⌘S` 收藏当前窗口；`⌥⌘⇧S` 框选区域。
+- 截图完成后弹出备注框，网页正文与 OCR 在后台补齐。
+- 收藏保存到 `captures/YYYY-MM/`，包括 PNG 和 Markdown。
+- Chrome / Arc / Safari 可以读取正文、标题、URL 与选中文字；其他应用使用截图和 OCR。
+- 失败的 OCR 可以通过 `noesis capture-ocr <收藏ID>` 重试。
+- `noesis annotate <收藏ID> --note "备注"` 修改备注并重新生成 Markdown。
 
-| 里程碑 | 状态 |
-|---|---|
-| M0 脚手架、init/doctor、格式调研 | 已实现，验收结果见 M0_REPORT |
-| M1 Claude Code / Codex 增量采集 | 已实现，验收结果见 M1_REPORT |
-| 新版 M1.0 公共层补强 | 已实现，验收结果见 docs/reports/M1.0.md |
-| 新版 M1.1 / M1.2 对话采集增强 | 待补分块合并、格式增强、backfill / dry-run 等差异 |
-| M2 Git | 待实现 |
-| M3 浏览历史 | 待实现，Safari 需授权后补格式验证 |
-| M4 快捷键收藏 / OCR | 待实现 |
-| M5 日志 / launchd | 待实现 |
-| M6 AI 每日提炼 | 可选，未启用 |
+系统设置中为 Hammerspoon 授予辅助功能、屏幕录制和浏览器自动化权限。
+浏览器还需开启“允许 Apple 事件中的 JavaScript”。未安装 Hammerspoon 时，命令行仍可使用。
 
-每个里程碑测试通过后单独 commit，汇报并等待用户确认。
+## 安装与卸载后台集成
+
+```sh
+scripts/install.sh
+scripts/uninstall.sh
+```
+
+安装脚本离线创建或复用虚拟环境、安装本地项目、编译 OCR、生成两个 launchd 任务，
+并把 Hammerspoon 模块链接到本机配置。重复安装不会追加重复任务或重复 require。
+依赖不在本机缓存时停止，不自动联网下载。Hammerspoon 应用需自行安装。
+已有用户 init.lua 会保留并在首次修改前备份；同名非 NOESIS 模块冲突时不会覆盖。
+
+- 每 30 分钟采集一次，加载任务时也采集。
+- Mac 系统时区的每天 23:30 采集并补生成最近 7 天日志。
+- 睡眠后由 launchd 在唤醒时补触发；开机及睡眠补触发仍须实机长期验收。
+- 卸载仅移除任务和本工具的 Hammerspoon 加载配置，保留数据。
+
+`doctor` 显示 launchd 加载状态、上次退出码和真实 Python 路径。
+Safari 授权应以该真实路径及实际启动应用为准；当前进程权限不能代表后台任务权限。
+定时任务日志位于 `~/NOESIS/logs/launchd-*.log`。
+
+## 数据与隐私边界
+
+- SQLite schema v3 保留 M0 的事件身份、UTC 微秒时间格式及哈希游标键。
+- 每 500 条完整对话源记录一起提交事件和游标；失败回滚当前批，已提交批次保留。
+- 前缀指纹检查支持同长度重写，仍需读取旧文件字节。重写不自动删除历史归档。
+- Claude Code 同 message.id 的分块合并；用户消息排除工具结果和注入，推理不保存。
+- Codex 按出现次数配对多通道镜像，history 用同会话、前 100 字及 ±5 秒匹配。
+- Git 以共同仓库目录去重 worktree，只收集配置及本机 Git 邮箱集合的提交，不存 diff。
+- 浏览器仅查询临时数据库副本。普通历史不保存网页正文，主动收藏才提取正文。
+- 敏感文本在入库前脱敏，搜索索引随数据同步；短中文搜索自动使用 LIKE。
+- 脱敏是模式匹配，无法识别所有自由文本秘密，也不处理截图像素。
+- 每日日志和收藏 Markdown 是生成文件，手工编辑可能被后续重建覆盖。
+- 项目时长根据事件间隔估算，并非精确工时；单事件按计划取整可能显示 0 分钟。
+
+## 开发验证
+
+```sh
+.venv/bin/python -m pytest -q
+```
+
+fixtures 为合成数据；macOS 上的 OCR 测试会实际编译 Swift 并识别合成中英图片。
+每个阶段单独提交，写后审查规则见 AGENTS.md，报告位于 docs/reports/。
+未安装浏览器、未授权系统权限和需要隔夜观察的验收不会被标记为自动通过。

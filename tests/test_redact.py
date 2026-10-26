@@ -48,3 +48,10 @@ def test_recursive_metadata_and_sensitive_keys():
 
 def test_private_keys_span_multiple_lines():
     assert redact("before\n-----BEGIN PRIVATE KEY-----\na\nb\n-----END PRIVATE KEY-----\nafter") == "before\n[REDACTED:PRIVATE_KEY]\nafter"
+
+
+def test_url_query_and_fragment_rules_are_idempotent():
+    text='https://example.invalid/?access_token=private&key=private#session=private'
+    clean=redact(text)
+    assert 'private' not in clean and redact(clean)==clean
+    assert redact('https://example.invalid/?access_token=REDACTED')=='https://example.invalid/?access_token=REDACTED'

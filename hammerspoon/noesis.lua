@@ -1,6 +1,7 @@
 -- The installer substitutes absolute executable and data paths.
 local executable = __NOESIS_EXECUTABLE__
 local dataDir = __NOESIS_DATA_DIR__
+local askNote = __NOESIS_ASK_NOTE__
 local lastCapture = 0
 local tasks = {}
 local function run(arguments, callback)
@@ -25,10 +26,12 @@ local function capture(region)
   if win then
     table.insert(args, "--window-id"); table.insert(args, tostring(win:id()))
     table.insert(args, "--app"); table.insert(args, win:application():bundleID() or "")
+    table.insert(args, "--app-name"); table.insert(args, win:application():name() or "")
     table.insert(args, "--window-title"); table.insert(args, win:title() or "")
   end
   run(args, function(code, value)
     if code ~= 0 or not value then notify("收藏失败或已取消，请检查权限与日志"); return end
+    if not askNote then notify("已收藏：" .. (value.title or "")); return end
     local button, note = hs.dialog.textPrompt("为什么存这个？", value.title or "", "", "保存备注", "跳过")
     if button == "保存备注" and note ~= "" then
       run({"annotate", value.id, "--note", note, "--data-dir", dataDir}, function(status)

@@ -230,3 +230,9 @@ schema v3 新增 repos。Git numstat 使用 -z 读取以兼容空格、制表符
 收藏 metadata 增加 text_sections（content 中各正文片段的起止位置）、page_url_hash 和截图警告。
 页面原始 URL 仅保存脱敏值与指纹；正文在后台获取，只有页面指纹一致才入库。
 PNG 嵌入链接相对 NOESIS 库根目录；md 使用文件锁和原子重建，避免 OCR / annotate 竞争。
+
+## M5 更新（2026-10-26）
+
+每日 Markdown 用确定性内容比较实现 catch-up，不增加事件更新时间缓存；删除、旧内容修改及会话标题更新都会反映到输出。
+URL 脱敏规则扩展到自由文本中的敏感 query / fragment，保留既有 REDACTED 标记的幂等性。
+Git 作者在 --author 筛选后再按邮箱精确检查，空回填窗口保存下界以避免下一次导入无关时间范围。

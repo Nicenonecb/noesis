@@ -58,6 +58,7 @@ def parser() -> argparse.ArgumentParser:
     capture.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     capture.add_argument('--window-id',type=int)
     capture.add_argument('--app',default='')
+    capture.add_argument('--app-name',default='')
     capture.add_argument('--window-title',default='')
     capture.add_argument('--region',action='store_true')
     for command in ('capture-ocr','annotate'):
@@ -66,6 +67,15 @@ def parser() -> argparse.ArgumentParser:
         child.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
         if command=='annotate':
             child.add_argument('--note',required=True)
+    for command in ('build-daily','daily-run'):
+        daily=sub.add_parser(command,help='生成每日 Markdown；daily-run 先采集')
+        daily.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+        choice=daily.add_mutually_exclusive_group()
+        choice.add_argument('--date',default='today')
+        choice.add_argument('--catch-up',type=int)
+    audit=sub.add_parser('audit-redaction',help='仅报告脱敏命中位置，可修复并重建 Markdown')
+    audit.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    audit.add_argument('--fix',action='store_true')
     for name, help_text in [("init", "初始化目录、配置与数据库，可重复运行"), ("doctor", "只读检查路径与权限，列出手动操作")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS, help="数据目录")
@@ -76,16 +86,31 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    config = None
     try:
         if args.command == "init":
             config = initialize(args.data_dir)
             print(redact(f"✅ 初始化完成：{config.root}（保留已有配置与数据）"))
             return 0
         config = load_config(args.data_dir)
+        if args.command in {'build-daily','daily-run'}:
+            from .render.daily import build_daily
+            collected=None
+            if args.command=='daily-run':
+                from .collectors.collect import collect
+                collected=collect(config)
+            result=build_daily(config,day=args.date,catch_up=args.catch_up)
+            print(json.dumps({'daily':result,'collect':collected} if collected is not None else result,ensure_ascii=False))
+            return 1 if collected and any(r['status'] in {'partial','failed'} for r in collected.values()) else 0
+        if args.command=='audit-redaction':
+            from .audit import audit_redaction
+            result=audit_redaction(config,fix=args.fix)
+            print(json.dumps(result,ensure_ascii=False))
+            return 1 if result['remaining'] else 0
         if args.command in {'capture','capture-ocr','annotate'}:
             from .capture.capture import create_capture,enrich_capture,annotate
             if args.command=='capture':
-                result=create_capture(config,window_id=args.window_id,app=args.app,window_title=args.window_title,region=args.region)
+                result=create_capture(config,window_id=args.window_id,app=args.app,app_name=args.app_name,window_title=args.window_title,region=args.region)
             elif args.command=='capture-ocr':
                 result=enrich_capture(config,args.id)
             else:
@@ -150,6 +175,14 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"❌ {exc}", file=sys.stderr)
     except (OSError, sqlite3.Error, ValueError) as exc:
+        if config is not None and args.command in {'capture','capture-ocr','annotate'}:
+            import traceback
+            frames=';'.join(f'{Path(frame.filename).name}:{frame.lineno}:{frame.name}' for frame in traceback.extract_tb(exc.__traceback__))
+            try:
+                with run_logger(config) as logger:
+                    logger.error('command=%s error=%s frames=%s',args.command,type(exc).__name__,frames)
+            except OSError:
+                pass  # A log write error must not obscure the original failure.
         # Paths, SQLite errors, and invalid data can contain source text/secrets.
         print(f"❌ 操作失败（{type(exc).__name__}）。请检查本机配置、目录权限和数据库。", file=sys.stderr)
     return 2

@@ -56,7 +56,8 @@ def test_failed_ocr_retains_capture_and_cancel_cleans_placeholder(tmp_path,monke
     config=initialize(tmp_path/'data')
     module='noesis.capture.capture'
     monkeypatch.setattr(module+'.screenshot',lambda path,**kw:path.write_bytes(b'synthetic'))
-    result=create_capture(config,background=False)
+    result=create_capture(config,app='com.example.Editor',app_name='Text Editor',window_title='draft',background=False)
+    assert result['title']=='Text Editor · draft'
     monkeypatch.setattr(module+'.subprocess.run',lambda *args,**kw:SimpleNamespace(returncode=1,stdout=''))
     assert enrich_capture(config,result['id'])['status']=='failed'
     with Database(config.db_path) as db:
@@ -70,6 +71,26 @@ def test_text_sections_and_limit():
     text,sections=compose_text('选中','正文正文','OCR',5)
     assert 'truncated' in text
     assert all(0<=section['start']<=section['end']<=len(text) for section in sections)
+
+
+@pytest.mark.parametrize('failure_point',['config','capture'])
+def test_capture_cli_failure_reports_safely(tmp_path,monkeypatch,capsys,failure_point):
+    from noesis.cli import main
+    config=initialize(tmp_path/'data')
+    secret='sk-'+'X'*24
+    def fail(*args,**kwargs):
+        raise PermissionError(secret)
+    if failure_point=='config':
+        monkeypatch.setattr('noesis.cli.load_config',fail)
+    else:
+        monkeypatch.setattr('noesis.capture.capture.create_capture',fail)
+    assert main(['capture','--data-dir',str(config.root)])==2
+    output=capsys.readouterr()
+    assert 'PermissionError' in output.err and secret not in output.err+output.out
+    logs=''.join(path.read_text() for path in (config.root/'logs').glob('*.log'))
+    assert secret not in logs
+    if failure_point=='capture':
+        assert 'PermissionError' in logs and 'frames=' in logs
 
 
 def test_native_vision_ocr(tmp_path):

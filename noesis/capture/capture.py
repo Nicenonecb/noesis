@@ -37,7 +37,7 @@ def screenshot(path, *, window_id=None, region=False):
     path.chmod(0o600)
 
 
-def create_capture(config, *, window_id=None, app='', window_title='', region=False, background=True):
+def create_capture(config, *, window_id=None, app='', app_name='', window_title='', region=False, background=True):
     now=datetime.now(config.timezone)
     directory=config.root/'captures'/now.strftime('%Y-%m')
     private_directory(directory)
@@ -55,10 +55,11 @@ def create_capture(config, *, window_id=None, app='', window_title='', region=Fa
         image.unlink(missing_ok=True)
         raise
     info=browser_bridge.metadata(app)
-    title=info.get('title') or ' · '.join(part for part in (app,window_title) if part) or '屏幕收藏'
+    app_name=app_name or (browser_bridge.APPS[app][0] if app in browser_bridge.APPS else app.rsplit('.',1)[-1])
+    title=info.get('title') or ' · '.join(part for part in (app_name,window_title) if part) or '屏幕收藏'
     event=Event('capture',identity,'capture',datetime.now(timezone.utc),title=title,
                 url=clean_url(info['url']) if info.get('url') else None,
-                meta={'app_bundle':app,'window_title':window_title,'screenshot':str(image.relative_to(config.root)),
+                meta={'app_bundle':app,'app_name':app_name,'window_title':window_title,'screenshot':str(image.relative_to(config.root)),
                       'ocr_status':'pending','note':'','selection':'','page_text_len':0,'text_sections':[],
                       'page_text_error':info.get('page_text_error'),
                       'page_url_hash':hashlib.sha256(info['url'].encode()).hexdigest() if info.get('url') else None,

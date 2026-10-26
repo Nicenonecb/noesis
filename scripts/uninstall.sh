@@ -1,3 +1,4 @@
 #!/bin/sh
 set -eu
-printf '%s\n' 'M0 未安装系统集成，无需卸载；不会删除 ~/NOESIS 数据。'
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$project_dir/.venv/bin/python" -m noesis.install uninstall "$@"

@@ -8,16 +8,18 @@ import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from typing import Any
 
+SENSITIVE_QUERY_PARAMS={'token','access_token','code','key','sig','signature','password','session','api_key','auth','secret'}
+_URL_SECRET=re.compile(r'(?P<prefix>[?&#](?:'+ '|'.join(sorted(SENSITIVE_QUERY_PARAMS)) +r')=)(?P<value>[^&#\s"<>]+)',re.I)
+
 
 def clean_url(url: str, *, tracking=False) -> str:
     parsed=urlsplit(url)
-    secret={'token','access_token','code','key','sig','signature','password','session','api_key','auth','secret'}
     query=[]
     for name,value in parse_qsl(parsed.query,keep_blank_values=True):
         key=name.lower()
         if tracking and (key.startswith(('utm_','share_')) or key in {'fbclid','gclid','spm','from'}):
             continue
-        query.append((name,'REDACTED' if key in secret else redact(value)))
+        query.append((name,'REDACTED' if key in SENSITIVE_QUERY_PARAMS else redact(value)))
     netloc=parsed.netloc.rsplit('@',1)[-1] if '@' in parsed.netloc else parsed.netloc
     return redact(urlunsplit((parsed.scheme,netloc,parsed.path,urlencode(query),parsed.fragment)))
 
@@ -54,6 +56,7 @@ def redact(text: str) -> str:
         return match["prefix"] + quote + f"[REDACTED:{label}]" + quote
 
     text = _ENV.sub(lambda match: assignment(match, "ENV_SECRET"), text)
+    text = _URL_SECRET.sub(lambda match: match.group(0) if match['value']=='REDACTED' else assignment(match, 'SECRET'), text)
     return _ASSIGNMENT.sub(lambda match: assignment(match, "SECRET"), text)
 
 

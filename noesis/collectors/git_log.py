@@ -106,13 +106,16 @@ def collect(ctx, *, backfill=None, dry_run=False):
                 continue
             cursor=None if backfill is not None else db.get_cursor('git',repo['common_dir'])
             since=datetime.fromisoformat(cursor)-timedelta(days=1) if cursor else start
-            args=['log','--all','--date-order','--fixed-strings']
+            args=['log','--all','--date-order','--fixed-strings','--no-show-signature']
             if since:
                 args.append('--since='+utc_timestamp(since))
             args.extend('--author='+email for email in emails)
             args.extend(['--format=%x1e%H%x1f%aI%x1f%cI%x1f%an%x1f%ae%x1f%P%x1f%D%x1f%s%x1f%b%x00','--numstat','-z'])
-            events=list(parse_log(git(repo['path'],*args),repo))
-            maximum=max((event.meta['committed_at'] for event in events),default=cursor)
+            events=[event for event in parse_log(git(repo['path'],*args),repo) if event.meta['author_email'] in emails]
+            watermarks=[event.meta['committed_at'] for event in events]
+            if cursor:watermarks.append(cursor)
+            if start:watermarks.append(utc_timestamp(start))
+            maximum=max(watermarks,default=None)
             selected=[event for event in events if not start or event.ts>=utc_timestamp(start)]
             for index in range(0,max(1,len(selected)),500):
                 with db.transaction():

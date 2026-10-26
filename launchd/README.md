@@ -1,8 +1,13 @@
-# M5：定时任务预留目录
+# NOESIS launchd 集成
 
-M0 不创建或加载 plist。M5 再生成含实际绝对解释器路径的
-`com.justin.noesis.collect.plist` 和 `com.justin.noesis.daily.plist`。
-按用户计划，分别每 1800 秒采集、23:30 采集并渲染。
+`scripts/install.sh` 按当前项目和数据目录生成 plist 到 `~/Library/LaunchAgents/`。
 
-需在 M5 明确：23:30 当日日志与“次日生成昨天完整日志”的差异，
-补齐最后半小时及睡眠期间的漏跑，并验证日志轮转与时区。
+| Label | 触发 | 命令 |
+|---|---|---|
+| com.justin.noesis.collect | 每 1800 秒，RunAtLoad | collect |
+| com.justin.noesis.daily | 系统时区每天 23:30 | daily-run --catch-up 7 |
+
+ProgramArguments 使用虚拟环境可执行文件的绝对路径，包含明确的数据目录；不依赖交互 shell。
+PATH、标准输出和错误日志路径由安装器生成。daily-run 在部分来源失败时仍生成日志，保留退出码 1 供 doctor 诊断。
+
+查看状态使用 `noesis doctor`。卸载使用 `scripts/uninstall.sh`，不会删除 NOESIS 数据。

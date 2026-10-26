@@ -32,7 +32,7 @@ def commit(path,name,content,email='own@example.invalid'):
 def test_discovery_author_worktree_numstat_and_reproject(tmp_path):
     root=repo(tmp_path/'project')
     first=commit(root,'a.txt',b'one\ntwo\n')
-    other=commit(root,'other.txt',b'other\n','other@example.invalid')
+    other=commit(root,'other.txt',b'other\n','notown@example.invalid')
     binary=commit(root,'image.bin',b'\x00\x01binary')
     worktree=tmp_path/'linked'
     git(root,'worktree','add','-b','feature',str(worktree))
@@ -94,3 +94,16 @@ def test_rewritten_commit_is_seen_with_overlap(tmp_path):
     assert result['inserted']==1
     with Database(config.db_path) as db:
         assert {row[0] for row in db.connection.execute("SELECT source_id FROM events WHERE source='git'")}=={original,rewritten}
+
+
+def test_empty_backfill_window_sets_cursor_without_importing_old_history(tmp_path):
+    from datetime import timedelta
+    root=repo(tmp_path/'project')
+    (root/'old.txt').write_text('old')
+    git(root,'add','old.txt')
+    env=os.environ|{'GIT_AUTHOR_DATE':'2020-01-01T00:00:00Z','GIT_COMMITTER_DATE':'2020-01-01T00:00:00Z'}
+    git(root,'commit','-m','old',env=env)
+    config=initialize(tmp_path/'data')
+    config.values['git']|={'repos':[str(root)],'scan_roots':[],'discover_from_sessions':False}
+    assert collect(config,'git',backfill=timedelta(days=7))['git']['inserted']==0
+    assert collect(config,'git')['git']['inserted']==0

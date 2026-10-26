@@ -54,7 +54,7 @@ def get_events(conn, *, start, end, sources=None, kinds=None, projects=None, lim
         raise ValueError("limit 和 offset 不能为负数。")
     params.extend([-1 if limit is None else limit, offset])
     return [_event(row) for row in conn.execute(
-        f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,id LIMIT ? OFFSET ?", params)]
+        f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,rowid LIMIT ? OFFSET ?", params)]
 
 
 def get_sessions(conn, *, start, end, source=None):
@@ -73,12 +73,16 @@ def get_session_events(conn, session_id, *, source=None):
     clauses, params = ["session_id=?"], [session_id]
     _filter(clauses, params, "source", source)
     return [_event(row) for row in conn.execute(
-        f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,id", params)]
+        f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,rowid", params)]
 
 
 def get_event(conn, event_id):
     row = conn.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
     return _event(row) if row else None
+
+
+def all_events(conn):
+    return [_event(row) for row in conn.execute('SELECT * FROM events ORDER BY ts,rowid')]
 
 
 def legacy_fragment_ids(conn, event):
@@ -232,7 +236,7 @@ def session_summaries(conn, *, source=None):
     """
     clauses, params = ["source IN ('claude_code','codex')", "session_id IS NOT NULL"], []
     _filter(clauses, params, "source", source)
-    rows = conn.execute(f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,id", params)
+    rows = conn.execute(f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,rowid", params)
     groups = defaultdict(list)
     for event in map(_event, rows):
         groups[(event.source, event.session_id)].append(event)
@@ -256,7 +260,7 @@ def history_matches(conn):
     """
     groups = defaultdict(list)
     history = []
-    for row in conn.execute("SELECT * FROM events WHERE source='codex' AND kind='user_msg' ORDER BY ts,id"):
+    for row in conn.execute("SELECT * FROM events WHERE source='codex' AND kind='user_msg' ORDER BY ts,rowid"):
         event = _event(row)
         key = (event.meta.get('session_hash'), event.meta.get('text_prefix_hash', event.meta.get('text_hash')))
         if event.meta.get('channel') == 'history':

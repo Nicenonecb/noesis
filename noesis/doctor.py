@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 import platform
+import plistlib
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -61,6 +63,32 @@ def _source_check(name: str, root: Path, pattern: str) -> Check:
 
 def _installed(bundle: str) -> bool:
     return any((root / bundle).exists() for root in (Path("/Applications"), Path.home() / "Applications"))
+
+
+def launchd_checks(config):
+    from .install import LABELS
+    checks=[]
+    for label in LABELS:
+        path=Path.home()/'Library/LaunchAgents'/(label+'.plist')
+        if not path.exists():
+            checks.append(Check(label,'manual','未安装','运行 scripts/install.sh'))
+            continue
+        try:
+            with path.open('rb') as handle:info=plistlib.load(handle)
+            arguments=info['ProgramArguments']
+            if str(config.root) not in arguments:
+                checks.append(Check(label,'manual','任务使用其他数据目录','使用正确 --data-dir 检查或重新安装'))
+                continue
+            result=subprocess.run(['launchctl','print',f'gui/{os.getuid()}/{label}'],capture_output=True,text=True,timeout=5)
+            match=re.search(r'last exit code = (\d+)',result.stdout)
+            code=int(match[1]) if match else None
+            python=(Path(arguments[0]).parent/'python').resolve()
+            ok=result.returncode==0 and code in (None,0)
+            checks.append(Check(label,'ok' if ok else 'fail',f'已加载={result.returncode==0}；上次退出码={code}；实际 Python：{python}',
+                                '' if ok else '查看 logs/launchd-*.log；修复来源权限后重新运行采集'))
+        except (OSError,ValueError,KeyError,plistlib.InvalidFileException,subprocess.SubprocessError):
+            checks.append(Check(label,'fail','任务配置或状态不可读','重新运行 scripts/install.sh'))
+    return checks
 
 
 def diagnose(config: Config) -> list[Check]:
@@ -151,7 +179,16 @@ def diagnose(config: Config) -> list[Check]:
         Check("辅助功能（M4）", "manual", "未验证 Hammerspoon 授权", "系统设置 → 隐私与安全性 → 辅助功能 → Hammerspoon"),
         Check("自动化 / Apple 事件（M4）", "manual", "未发送 Apple 事件，不触发授权弹窗", "M4 首次运行时允许实际调用方控制浏览器，并在隐私与安全性 → 自动化核对"),
         Check("浏览器 JavaScript（M4）", "manual", "未运行浏览器脚本", "Chrome：显示 → 开发者 → 允许 Apple 事件中的 JavaScript；Safari：开发 → 允许 Apple 事件中的 JavaScript；Arc 在 M4 实测"),
-        Check("OCR（M4）", "ok" if (config.root / "bin/noesis-ocr").is_file() else "manual", "已发现二进制" if (config.root / "bin/noesis-ocr").is_file() else "尚未编译；M4 实现"),
-        Check("launchd（M5）", "manual", "尚未安装；当前进程的权限不代表定时任务权限", "M5 安装后给 plist 中实际解释器授权，并通过 launchd 实测 Safari 读取"),
     ])
+    binary=config.root/'bin/noesis-ocr'
+    if binary.exists():
+        try:
+            result=subprocess.run([str(binary),'--version'],capture_output=True,timeout=5)
+            checks.append(Check('OCR（M4）','ok' if result.returncode==0 else 'fail','二进制运行检查',
+                                '' if result.returncode==0 else '重新运行 scripts/install.sh 编译 OCR'))
+        except (OSError,subprocess.SubprocessError):
+            checks.append(Check('OCR（M4）','fail','二进制不可运行','重新运行 scripts/install.sh'))
+    else:
+        checks.append(Check('OCR（M4）','manual','尚未编译','运行 scripts/install.sh'))
+    checks.extend(launchd_checks(config))
     return checks

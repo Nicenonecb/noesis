@@ -17,6 +17,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def config(tmp_path):
     original = initialize(tmp_path / "data")
     values = original.values
+    values['sources']['git']=False
     for name, key in [("claude_code", "root"), ("codex", "sessions_root")]:
         root = tmp_path / name
         root.mkdir()

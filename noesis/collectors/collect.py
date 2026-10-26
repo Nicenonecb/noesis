@@ -10,7 +10,8 @@ import sqlite3
 
 from ..db import Database
 from ..runtime import collection_lock, run_logger
-from . import claude_code, codex
+from . import claude_code, codex, git_log
+from ..migrations import migrate
 from .base import Context, CollectResult
 from .common import FileReadError, read_file
 
@@ -78,6 +79,8 @@ def collection_database(config, dry_run):
             original.backup(db.connection)
         finally:
             original.close()
+        with db.transaction():
+            migrate(db.connection)
         yield db
 
 
@@ -87,21 +90,24 @@ def collect(config, source="all", *, replay=False, backfill=None, dry_run=False)
     lock_context = nullcontext() if dry_run else collection_lock(config.root)
     with lock_context, logger_context as logger, collection_database(config, dry_run) as db:
         ctx = Context(config, db, logger, config.timezone)
-        for name, module, key in (("claude_code", claude_code, "root"), ("codex", codex, "sessions_root")):
+        for name, module, key in (("claude_code", claude_code, "root"), ("codex", codex, "sessions_root"), ('git',git_log,None)):
             if source not in {"all", name} or not config.values["sources"][name]:
                 continue
             run_id = None if dry_run else db.start_run(name)
             logger.info("source=%s started", name)
             fatal = None
             try:
-                total, issues = _collect_source(ctx, name, module, key, replay=replay, backfill=backfill)
+                if key is None:
+                    total, issues = module.collect(ctx, backfill='all' if replay else backfill, dry_run=dry_run)
+                else:
+                    total, issues = _collect_source(ctx, name, module, key, replay=replay, backfill=backfill)
             except Exception as exc:
                 # Source data and exception text may contain secrets. Only retain the type.
                 fatal = type(exc).__name__
                 total, issues = Counter(failed_files=1), []
             summary = CollectResult(
                 name, total["inserted"], total["duplicates"],
-                sum(total[key] for key in ("invalid_lines", "unknown_records", "failed_files", "missing_sources")),
+                sum(total[key] for key in ("invalid_lines", "unknown_records", "failed_files", "missing_sources",'discovery_warnings','missing_authors')),
                 [fatal] if fatal else (["file_failure"] if total["failed_files"] else []),
             )
             failed_all = total["failed_files"] and not total["completed_files"] and not total["lines"]
@@ -114,4 +120,7 @@ def collect(config, source="all", *, replay=False, backfill=None, dry_run=False)
                 name, status, summary.inserted, summary.skipped, summary.warnings, fatal or "none")
             # Preserve M1's JSON fields; skipped historically means filtered lines.
             results[name] = dict(total) | {"warnings": issues, "warning_count": summary.warnings, "status": status, 'dry_run': dry_run}
+        if config.values['sources']['git'] and source in {'all','git'}:
+            with db.transaction():
+                db.reproject()
     return results

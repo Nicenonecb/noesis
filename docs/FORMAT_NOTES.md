@@ -213,3 +213,9 @@ summary / custom-title 用于会话标题，工具摘要和纯工具 assistant �
 Codex 延续既有出现次数身份规则，并选择主通道内容。新增工具摘要、session_meta 空会话和 cli_version。
 history 改为前 100 字及 ±5 秒匹配，配对 ID 写入主消息 metadata，防止重复运行重复消耗同一主消息。
 回填支持按时间或全量；dry-run 使用内存数据库副本。本机新格式全量回填无解析警告。
+
+## M2 更新（2026-10-26）
+
+schema v3 新增 repos。Git numstat 使用 -z 读取以兼容空格、制表符及重命名路径，
+二进制 '-' 计为 0；cursor 使用最大 committer UTC 时间，事件使用 author UTC 时间。
+项目名通过已发现仓库及 common_dir 统一；不可访问旧 cwd 保留目录名。

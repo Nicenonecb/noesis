@@ -31,6 +31,7 @@ def event(identity="test", **kw):
 
 def synthetic_config(tmp_path):
     config = initialize(tmp_path / "data")
+    config.values['sources']['git']=False
     for name, key in (("claude_code", "root"), ("codex", "sessions_root")):
         root = tmp_path / name
         root.mkdir()

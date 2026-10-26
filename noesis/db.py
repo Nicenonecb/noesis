@@ -221,6 +221,30 @@ class Database:
     def upsert_session(self, session):
         upsert_session(self.connection, session)
 
+    def upsert_repo(self, repo, via):
+        now=utc_timestamp(datetime.now(timezone.utc))
+        self.connection.execute('''INSERT INTO repos(path,name,common_dir,discovered_via,first_seen,last_seen)
+            VALUES (?,?,?,?,?,?) ON CONFLICT(common_dir) DO UPDATE SET last_seen=excluded.last_seen''',
+            (repo['path'],redact(repo['name']),repo['common_dir'],via,now,now))
+
+    def set_repo_enabled(self, path, enabled):
+        self.connection.execute('UPDATE repos SET enabled=? WHERE path=?',(int(enabled),str(Path(path).resolve())))
+
+    def reproject(self):
+        from .queries import get_repos, project_rows
+        from .projects import resolve_project
+        repos=get_repos(self.connection)
+        count=0
+        resolved={}
+        for identity,cwd in project_rows(self.connection):
+            if cwd not in resolved:
+                resolved[cwd]=resolve_project(cwd,repos)
+            self.connection.execute('UPDATE events SET project=? WHERE id=?',
+                                    (resolved[cwd],identity))
+            count+=1
+        self.refresh_sessions()
+        return count
+
     def get_cursor(self, source, key):
         return get_cursor(self.connection, source, key)
 

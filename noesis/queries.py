@@ -92,6 +92,24 @@ def session_record(conn, source, session_id):
     return _session(row) if row else None
 
 
+def session_cwds(conn):
+    return [row[0] for row in conn.execute('SELECT DISTINCT cwd FROM sessions WHERE cwd IS NOT NULL')]
+
+
+def get_repos(conn, *, enabled=None):
+    query='SELECT * FROM repos'
+    params=()
+    if enabled is not None:
+        query+=' WHERE enabled=?'
+        params=(int(enabled),)
+    return [dict(row) for row in conn.execute(query+' ORDER BY path',params)]
+
+
+def project_rows(conn):
+    return [(row['id'], json.loads(row['meta']).get('cwd')) for row in conn.execute(
+        "SELECT id,meta FROM events WHERE source IN ('claude_code','codex')")]
+
+
 def get_captures(conn, *, start, end):
     return get_events(conn, start=start, end=end, sources=["capture"], kinds=["capture"])
 

@@ -207,3 +207,9 @@ Claude Code assistant 的身份改为 session + message.id（缺少时用 uuid�
 metadata 中用于重放去重；原来的按行事件通过 raw_ref 精确迁移。用户身份保持原规则。
 summary / custom-title 用于会话标题，工具摘要和纯工具 assistant 记录保留；sidechain 整文件跳过。
 未知非消息类型计数，不再为新增的外围记录类型报 warning。真实回放 27 文件无警告。
+
+## M1.2 更新（2026-10-26）
+
+Codex 延续既有出现次数身份规则，并选择主通道内容。新增工具摘要、session_meta 空会话和 cli_version。
+history 改为前 100 字及 ±5 秒匹配，配对 ID 写入主消息 metadata，防止重复运行重复消耗同一主消息。
+回填支持按时间或全量；dry-run 使用内存数据库副本。本机新格式全量回填无解析警告。

@@ -1,8 +1,10 @@
 """Codex response, completed-item and legacy channels with occurrence matching."""
 
 from datetime import datetime, timezone
+import json
 
 from .common import UnknownRecord, fingerprint, human_text, make_event, text_content
+from ..models import ToolUpdate, utc_timestamp
 
 IGNORED = {"world_state", "token_usage_record", "compacted"}
 IGNORED_ITEMS = {"Reasoning", "CommandExecution", "McpToolCall", "FileChange", "Extension",
@@ -28,6 +30,9 @@ def parser(settings):
             state["session"] = session
             state["session_hash"] = fingerprint(state["session"])
             state["cwd"] = payload.get("cwd")
+            state['cli_version'] = payload.get('cli_version')
+            if stamp := payload.get('timestamp', record.get('timestamp')):
+                state['started_at'] = state['ended_at'] = utc_timestamp(stamp)
             return None
         if kind == "turn_context":
             if payload.get("cwd") is not None and not isinstance(payload["cwd"], str):
@@ -35,6 +40,23 @@ def parser(settings):
             state["cwd"] = payload.get("cwd", state.get("cwd"))
             state["turn"] = payload.get("turn_id", state.get("turn", ""))
             return None
+        if kind == 'response_item' and payload.get('type') in {'function_call', 'custom_tool_call'}:
+            if not state.get('last_assistant_id'):
+                return None
+            arguments = payload.get('arguments', payload.get('input', {}))
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except ValueError:
+                    arguments = {}
+            if not isinstance(arguments, dict):
+                arguments = {}
+            detail = next((arguments[key] for key in ('cmd','command','file_path','path') if key in arguments), '')
+            if isinstance(detail, list):
+                detail = ' '.join(str(part) for part in detail)
+            tool = {'name': str(payload.get('name', 'shell')), 'summary': str(detail)[:200]}
+            return ToolUpdate(state['last_assistant_id'], fingerprint(str(payload.get('call_id') or record)),
+                              tool, utc_timestamp(record['timestamp']))
         channel, role, phase, content = "", "", "", ""
         if kind == "response_item" and payload.get("type") == "message":
             role = payload.get("role")
@@ -62,6 +84,8 @@ def parser(settings):
             return None
         text = text_content(content)
         text = human_text(text) if role == "user" else text.strip()
+        if role == 'user' and any(text.startswith(prefix) for prefix in settings.get('injected_prefixes', [])):
+            return None
         if not text:
             return None
         session = state.get("session", path.stem)
@@ -81,7 +105,13 @@ def parser(settings):
         event = make_event("codex", f"{match_key}:{occurrence}", role, record["timestamp"],
                            text, session, state.get("cwd"), path, line,
                            settings["max_assistant_chars"],
-                           {"channel": channel, "phase": phase, "turn_id": turn})
+                           {"channel": channel, "phase": phase, "turn_id": turn,
+                            'cli_version': state.get('cli_version')})
+        stamp = utc_timestamp(record['timestamp'])
+        state['started_at'] = min(state.get('started_at', stamp), stamp)
+        state['ended_at'] = max(state.get('ended_at', stamp), stamp)
+        if role == 'assistant' and event:
+            state['last_assistant_id'] = event.id
         counters[counter_key] = occurrence
         if seen_key:
             seen[seen_key] = True
@@ -103,20 +133,23 @@ def history_parser(settings):
         occurrence = counters.get(key, 0) + 1
         event = make_event("codex", f"history:{key}:{occurrence}", "user", timestamp, text,
                            session, None, path, line, settings["max_assistant_chars"],
-                           {"channel": "history", "history_occurrence": occurrence})
+                           {"channel": "history", "history_occurrence": occurrence, 'from_history': True})
         counters[key] = occurrence
         return event
     return parse
 
 
 def reconcile_history(db):
-    """Match one history occurrence per session message in the same UTC second.
+    """Match one history occurrence per session message within five seconds.
 
     Re-run after every pass so a later-arriving rollout can replace history-only
-    input. Different seconds are intentionally not fuzzy-matched.
+    input. Persisted pairings prevent a main occurrence being reused on retries.
     """
-    from ..queries import history_duplicates
-    identities = history_duplicates(db.connection)
+    from ..queries import history_matches, get_event
+    matches = history_matches(db.connection)
     with db.transaction():
-        db.delete_events(identities)
-    return len(identities)
+        for history_id, main_id in matches:
+            event = get_event(db.connection, main_id)
+            db.update_event_meta(main_id, {'history_matches': sorted(set(event.meta.get('history_matches', []) + [history_id]))})
+        db.delete_events([history for history, main in matches])
+    return len(matches)

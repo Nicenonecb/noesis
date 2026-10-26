@@ -19,20 +19,21 @@ def _json(value):
     return json.dumps(redact_value(value), ensure_ascii=False, allow_nan=False)
 
 
-def insert_event(conn, event: Event) -> bool:
+def _event_values(event):
     fields = [event.session_id, event.project, event.title, event.content, event.url, event.raw_ref]
     session_id, project, title, content, url, raw_ref = [
         redact(value) if value is not None else None for value in fields
     ]
+    return (event.id, event.source, event.kind, event.ts, session_id, project, title, content,
+            url, _json(event.meta), raw_ref, event.importance, redact(event.source_id))
+
+
+def insert_event(conn, event: Event) -> bool:
     cursor = conn.execute(
-        '''INSERT INTO events
-           (id, source, kind, ts, session_id, project, title, content, url, meta,
-            raw_ref, importance, created_at, source_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO NOTHING''',
-        (event.id, event.source, event.kind, event.ts, session_id, project, title, content,
-         url, _json(event.meta), raw_ref, event.importance,
-         utc_timestamp(datetime.now(timezone.utc)), redact(event.source_id)),
+        """INSERT INTO events
+           (id,source,kind,ts,session_id,project,title,content,url,meta,raw_ref,importance,source_id,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING""",
+        _event_values(event) + (utc_timestamp(datetime.now(timezone.utc)),),
     )
     return cursor.rowcount == 1
 
@@ -135,13 +136,12 @@ class Database:
         return upsert_events(self.connection, events)
 
     def replace_event(self, event):
-        """Update a known identity through the same redaction boundary as inserts."""
-        from .queries import event_created_at
-        created_at = event_created_at(self.connection, event.id)
-        self.connection.execute('DELETE FROM events WHERE id=?', (event.id,))
-        self.insert_event(event)
-        if created_at:
-            self.connection.execute('UPDATE events SET created_at=? WHERE id=?', (created_at, event.id))
+        """Update in place, retaining rowid and the original created_at."""
+        values = _event_values(event)
+        self.connection.execute(
+            """UPDATE events SET source=?,kind=?,ts=?,session_id=?,project=?,title=?,content=?,
+               url=?,meta=?,raw_ref=?,importance=?,source_id=? WHERE id=?""",
+            values[1:] + (event.id,))
 
     def merge_assistant(self, event):
         from .queries import get_event, legacy_fragment_ids
@@ -177,6 +177,31 @@ class Database:
         else:
             self.insert_event(event)
         return old is None
+
+    def upsert_codex_event(self, event):
+        from .queries import get_event
+        old = get_event(self.connection, event.id)
+        if old is None:
+            return self.insert_event(event)
+        order = ['completed', 'response', 'legacy'] if event.kind == 'user_msg' else ['legacy', 'completed', 'response']
+        priority = {channel: index for index, channel in enumerate(order)}
+        preferred = priority.get(event.meta.get('channel'), -1) > priority.get(old.meta.get('channel'), -1)
+        meta = old.meta | event.meta if preferred else event.meta | old.meta
+        for key in ('history_matches', 'tools', 'tool_call_ids'):
+            if key in old.meta:
+                meta[key] = old.meta[key]
+        replacement = replace(event if preferred else old, meta=meta)
+        if replacement != old:
+            self.replace_event(replacement)
+        return False
+
+    def append_tool(self, update):
+        from .queries import get_event
+        event = get_event(self.connection, update.event_id)
+        if event is None or update.call_id in event.meta.get('tool_call_ids', []):
+            return
+        self.update_event_meta(event.id, {'tools': event.meta.get('tools', []) + [update.tool],
+                                         'tool_call_ids': event.meta.get('tool_call_ids', []) + [update.call_id]})
 
     def record_session_hint(self, source, state, path):
         from .queries import session_record

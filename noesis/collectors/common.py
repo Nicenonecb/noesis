@@ -7,7 +7,7 @@ import os
 import re
 import sqlite3
 
-from ..models import Event
+from ..models import Event, ToolUpdate, utc_timestamp
 from ..projects import resolve_project
 from ..redact import redact
 
@@ -58,6 +58,7 @@ def make_event(source, identity, role, timestamp, text, session, cwd, path, line
     metadata = dict(meta or {})
     metadata["cwd"] = cwd
     metadata["text_hash"] = fingerprint(text)
+    metadata["text_prefix_hash"] = fingerprint(text[:100])
     metadata["session_hash"] = fingerprint(session)
     metadata["truncated"] = role == "assistant" and len(clean) > limit
     metadata["content_chars"] = len(clean)
@@ -85,7 +86,7 @@ class FileReadError(OSError):
         self.issues = issues
 
 
-def read_file(db, path, source, parse, *, replay=False):
+def read_file(db, path, source, parse, *, replay=False, reset=False, start=None):
     """Checkpoint at most 500 complete records with their exact parser cursor.
 
     Verify the old prefix to retain M1's same-size rewrite detection. Re-read
@@ -97,7 +98,7 @@ def read_file(db, path, source, parse, *, replay=False):
     warnings = []
     key = str(path.resolve())
     try:
-        old = None if replay else db.get_cursor(source, key)
+        old = None if replay or reset else db.get_cursor(source, key)
         with path.open("rb") as handle:
             stat = os.fstat(handle.fileno())
             offset = old.get("offset", 0) if old else 0
@@ -158,7 +159,14 @@ def read_file(db, path, source, parse, *, replay=False):
                             continue
                         if event is None:
                             batch_counts["skipped"] += 1
-                        elif (db.merge_assistant(event) if event.meta.get("fragment_id") else db.insert_event(event)):
+                        elif isinstance(event, ToolUpdate):
+                            if not start or event.ts >= utc_timestamp(start):
+                                db.append_tool(event)
+                            batch_counts['skipped'] += 1
+                        elif start and event.ts < utc_timestamp(start):
+                            batch_counts['filtered_by_date'] += 1
+                        elif (db.merge_assistant(event) if event.meta.get("fragment_id") else
+                              db.upsert_codex_event(event) if source == 'codex' else db.insert_event(event)):
                             batch_counts["inserted"] += 1
                         else:
                             batch_counts["duplicates"] += 1

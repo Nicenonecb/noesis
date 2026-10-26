@@ -81,11 +81,6 @@ def get_event(conn, event_id):
     return _event(row) if row else None
 
 
-def event_created_at(conn, event_id):
-    row = conn.execute('SELECT created_at FROM events WHERE id=?', (event_id,)).fetchone()
-    return row[0] if row else None
-
-
 def legacy_fragment_ids(conn, event):
     return [row[0] for row in conn.execute(
         'SELECT id FROM events WHERE source=? AND raw_ref=? AND id<>?',
@@ -218,15 +213,32 @@ def session_summaries(conn, *, source=None):
                       counts["user_msg"], counts["assistant_msg"], raw.rsplit(":", 1)[0])
 
 
-def history_duplicates(conn):
-    """Return exact same-second history copies already represented by rollouts."""
-    main, history = Counter(), []
-    rows = conn.execute("SELECT id,ts,meta FROM events WHERE source='codex' AND kind='user_msg'")
-    for row in rows:
-        meta = json.loads(row["meta"])
-        key = (meta.get("session_hash"), meta.get("text_hash"), row["ts"][:19])
-        if meta.get("channel") == "history":
-            history.append((row["id"], key, meta["history_occurrence"]))
+def history_matches(conn):
+    """Pair history copies within five seconds, preserving repeated inputs.
+
+    Persisted match IDs on main events prevent a later pass from consuming the
+    same main occurrence twice when earlier history rows have been removed.
+    """
+    groups = defaultdict(list)
+    history = []
+    for row in conn.execute("SELECT * FROM events WHERE source='codex' AND kind='user_msg' ORDER BY ts,id"):
+        event = _event(row)
+        key = (event.meta.get('session_hash'), event.meta.get('text_prefix_hash', event.meta.get('text_hash')))
+        if event.meta.get('channel') == 'history':
+            history.append((event, key))
         else:
-            main[key] += 1
-    return [identity for identity, key, occurrence in history if occurrence <= main[key]]
+            groups[key].append(event)
+    matches, used = [], set()
+    for event, key in history:
+        candidates = groups[key]
+        previous = next((main for main in candidates if event.id in main.meta.get('history_matches', [])), None)
+        if previous:
+            matches.append((event.id, previous.id))
+            continue
+        eligible = [main for main in candidates if main.id not in used and not main.meta.get('history_matches')
+                    and abs((datetime.fromisoformat(main.ts) - datetime.fromisoformat(event.ts)).total_seconds()) <= 5]
+        if eligible:
+            main = min(eligible, key=lambda item: (abs((datetime.fromisoformat(item.ts) - datetime.fromisoformat(event.ts)).total_seconds()), item.id))
+            matches.append((event.id, main.id))
+            used.add(main.id)
+    return matches

@@ -96,6 +96,14 @@ class SearchHit:
 
 
 @dataclass(frozen=True)
+class ToolUpdate:
+    event_id: str
+    call_id: str
+    tool: dict
+    ts: str
+
+
+@dataclass(frozen=True)
 class DomainStat:
     domain: str
     visits: int

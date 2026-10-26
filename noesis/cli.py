@@ -2,6 +2,7 @@
 
 import argparse
 from dataclasses import asdict
+from datetime import timedelta
 import json
 from pathlib import Path
 import sqlite3
@@ -12,6 +13,14 @@ from .config import ConfigError, initialize, load_config
 from .doctor import diagnose
 from .redact import redact
 from .runtime import AlreadyRunning, run_logger
+
+
+def backfill_window(value):
+    if value == 'all':
+        return value
+    if value.endswith('d') and value[:-1].isdigit() and int(value[:-1]) > 0:
+        return timedelta(days=int(value[:-1]))
+    raise argparse.ArgumentTypeError('使用 7d、30d 或 all。')
 
 
 def parser() -> argparse.ArgumentParser:
@@ -26,7 +35,10 @@ def parser() -> argparse.ArgumentParser:
     collect = sub.add_parser("collect", help="增量采集本地 Claude Code / Codex 对话")
     collect.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
     collect.add_argument("--source", choices=["all", "claude_code", "codex"], default="all")
-    collect.add_argument("--replay", action="store_true", help="重读完整来源，幂等回填且不改变增量游标")
+    history = collect.add_mutually_exclusive_group()
+    history.add_argument("--replay", action="store_true", help="重读完整来源，幂等回填且不改变增量游标")
+    history.add_argument('--backfill', type=backfill_window, help='回填 7d / 30d / all，更新增量游标')
+    collect.add_argument('--dry-run', action='store_true', help='解析并统计，不修改数据库和游标')
     stats = sub.add_parser("stats", help="查看来源事件数量与最近采集状态")
     stats.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
     search = sub.add_parser("search", help="搜索本地记录（中文短词同样支持）")
@@ -69,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                 connection.close()
         if args.command == "collect":
             from .collectors.collect import collect
-            results = collect(config, args.source, replay=args.replay)
+            results = collect(config, args.source, replay=args.replay, backfill=args.backfill, dry_run=args.dry_run)
             print(json.dumps(results, ensure_ascii=False, sort_keys=True))
             return 1 if any(result.get("status") in {"partial", "failed"}
                             for result in results.values()) else 0

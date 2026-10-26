@@ -5,7 +5,21 @@ Call before truncation so truncated credentials cannot evade recognition.
 """
 
 import re
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from typing import Any
+
+
+def clean_url(url: str, *, tracking=False) -> str:
+    parsed=urlsplit(url)
+    secret={'token','access_token','code','key','sig','signature','password','session','api_key','auth','secret'}
+    query=[]
+    for name,value in parse_qsl(parsed.query,keep_blank_values=True):
+        key=name.lower()
+        if tracking and (key.startswith(('utm_','share_')) or key in {'fbclid','gclid','spm','from'}):
+            continue
+        query.append((name,'REDACTED' if key in secret else redact(value)))
+    netloc=parsed.netloc.rsplit('@',1)[-1] if '@' in parsed.netloc else parsed.netloc
+    return redact(urlunsplit((parsed.scheme,netloc,parsed.path,urlencode(query),parsed.fragment)))
 
 _PATTERNS = [
     ("PRIVATE_KEY", re.compile(r"-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----[\s\S]*?-----END \1-----")),

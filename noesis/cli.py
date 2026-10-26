@@ -34,7 +34,7 @@ def parser() -> argparse.ArgumentParser:
     sub = root.add_subparsers(dest="command", required=True)
     collect = sub.add_parser("collect", help="增量采集本地 Claude Code / Codex 对话")
     collect.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
-    collect.add_argument("--source", choices=["all", "claude_code", "codex",'git'], default="all")
+    collect.add_argument("--source", choices=["all", "claude_code", "codex",'git','browser_history'], default="all")
     history = collect.add_mutually_exclusive_group()
     history.add_argument("--replay", action="store_true", help="重读完整来源，幂等回填且不改变增量游标")
     history.add_argument('--backfill', type=backfill_window, help='回填 7d / 30d / all，更新增量游标')

@@ -8,7 +8,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tempfile
 
 from .config import Config
 from .db import SCHEMA_VERSION
@@ -35,32 +34,12 @@ def inspect_history(path: Path, tables: tuple[str, ...]) -> None:
     copy/check once; a failure is reported rather than called permission success.
     M3 will implement collection and its cursor strategy separately.
     """
-    for attempt in range(2):
-        try:
-            with tempfile.TemporaryDirectory(prefix="noesis-doctor-") as temp:
-                target = Path(temp) / path.name
-                shutil.copyfile(path, target)
-                target.chmod(0o600)
-                wal = path.with_name(path.name + "-wal")
-                if wal.exists():
-                    wal_copy = target.with_name(target.name + "-wal")
-                    shutil.copyfile(wal, wal_copy)
-                    wal_copy.chmod(0o600)
-                connection = sqlite3.connect(target.as_uri() + "?mode=ro", uri=True)
-                try:
-                    if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-                        raise sqlite3.DatabaseError("快照一致性检查失败")
-                    for table in tables:
-                        # Only internal constant table names are accepted by callers.
-                        if table not in {"urls", "visits", "history_items", "history_visits"}:
-                            raise ValueError("未知历史表")
-                        connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
-                finally:
-                    connection.close()
-            return
-        except (OSError, sqlite3.Error):
-            if attempt:
-                raise
+    from .sqlite_snapshot import history_snapshot
+    with history_snapshot(path) as connection:
+        for table in tables:
+            if table not in {'urls','visits','history_items','history_visits'}:
+                raise ValueError('未知历史表')
+            connection.execute(f'SELECT 1 FROM {table} LIMIT 1').fetchone()
 
 
 def _source_check(name: str, root: Path, pattern: str) -> Check:
@@ -133,29 +112,24 @@ def diagnose(config: Config) -> list[Check]:
             checks.append(Check("Codex history", "ok", "补充历史文件可读；不保证覆盖桌面会话"))
         except OSError:
             checks.append(Check("Codex history", "manual", "补充历史不可读；sessions 仍可独立使用", "检查 codex.history_file"))
-    browsers = {
-        "chrome": ("Google Chrome.app", Path.home() / "Library/Application Support/Google/Chrome", "*/History", ("urls", "visits")),
-        "arc": ("Arc.app", Path.home() / "Library/Application Support/Arc/User Data", "*/History", ("urls", "visits")),
-        "safari": ("Safari.app", Path.home() / "Library/Safari", "History.db", ("history_items", "history_visits")),
-    }
-    if enabled["browser_history"]:
-        for name in config.values["browser"]["enabled"]:
-            bundle, root, pattern, tables = browsers[name]
-            installed = _installed(bundle)
+    if enabled['browser_history']:
+        from .collectors.browser_history import profiles
+        seen=set()
+        for profile,path in profiles(config):
+            name=profile['name'];seen.add(name)
+            tables=('urls','visits') if profile['kind']=='chromium' else ('history_items','history_visits')
             try:
-                paths = sorted(root.glob(pattern))
-                if not paths:
-                    checks.append(Check(name, "manual" if installed else "skip", "未发现历史库", "确认已使用此浏览器；检查路径/访问权限" if installed else ""))
-                for path in paths:
-                    try:
-                        inspect_history(path, tables)
-                        checks.append(Check(f"{name}/{path.parent.name}", "ok", "历史库副本（含存在的 WAL）可读"))
-                    except PermissionError:
-                        checks.append(Check(name, "fail", "历史库访问被拒绝", "系统设置 → 隐私与安全性 → 完全磁盘访问权限；核对上面打印的解释器及启动终端/Codex，重启后重试"))
-                    except (OSError, sqlite3.Error) as exc:
-                        checks.append(Check(name, "fail", f"历史库副本读取失败（{type(exc).__name__}）", "稍后重试，并检查文件权限及数据库完整性"))
-            except OSError:
-                checks.append(Check(name, "fail", "历史目录不可读", "检查完全磁盘访问权限"))
+                inspect_history(path,tables)
+                checks.append(Check(f'{name}/{path.parent.name}','ok','历史库副本（含存在的 WAL / journal）可读'))
+            except FileNotFoundError:
+                checks.append(Check(name,'skip','未发现历史库'))
+            except PermissionError:
+                checks.append(Check(name,'fail','历史库访问被拒绝','系统设置 → 隐私与安全性 → 完全磁盘访问权限；核对上面打印的解释器及启动终端/Codex，重启后重试'))
+            except (OSError,sqlite3.Error) as exc:
+                checks.append(Check(name,'fail',f'历史库副本读取失败（{type(exc).__name__}）','稍后重试，并检查文件权限及数据库完整性'))
+        for name in config.values['browser']['enabled']:
+            if name not in seen:
+                checks.append(Check(name,'skip','未发现历史库'))
     if enabled["git"]:
         git = shutil.which("git")
         if git is None:

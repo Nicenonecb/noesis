@@ -16,6 +16,7 @@ def setup(tmp_path):
     config.values['codex']['history_file']=str(tmp_path/'history.jsonl')
     config.values['sources']['claude_code']=False
     config.values['sources']['git']=False
+    config.values['sources']['browser_history']=False
     return config,root/'rollout.jsonl'
 
 

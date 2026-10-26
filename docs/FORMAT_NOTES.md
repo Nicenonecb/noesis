@@ -219,3 +219,8 @@ history 改为前 100 字及 ±5 秒匹配，配对 ID 写入主消息 metadata�
 schema v3 新增 repos。Git numstat 使用 -z 读取以兼容空格、制表符及重命名路径，
 二进制 '-' 计为 0；cursor 使用最大 committer UTC 时间，事件使用 author UTC 时间。
 项目名通过已发现仓库及 common_dir 统一；不可访问旧 cwd 保留目录名。
+
+## M3 更新（2026-10-26）
+
+浏览历史采集共用副本读取器，包含 WAL / journal。游标保存 visit_time + visit_id，
+以及最后一组归一化 URL 和时间，以支持跨运行的连续刷新合并。Arc / Safari 未实机授权的边界仍保留。

@@ -10,7 +10,7 @@ import sqlite3
 
 from ..db import Database
 from ..runtime import collection_lock, run_logger
-from . import claude_code, codex, git_log
+from . import claude_code, codex, git_log, browser_history
 from ..migrations import migrate
 from .base import Context, CollectResult
 from .common import FileReadError, read_file
@@ -90,7 +90,8 @@ def collect(config, source="all", *, replay=False, backfill=None, dry_run=False)
     lock_context = nullcontext() if dry_run else collection_lock(config.root)
     with lock_context, logger_context as logger, collection_database(config, dry_run) as db:
         ctx = Context(config, db, logger, config.timezone)
-        for name, module, key in (("claude_code", claude_code, "root"), ("codex", codex, "sessions_root"), ('git',git_log,None)):
+        for name, module, key in (("claude_code", claude_code, "root"), ("codex", codex, "sessions_root"),
+                                  ('git',git_log,None),('browser_history',browser_history,None)):
             if source not in {"all", name} or not config.values["sources"][name]:
                 continue
             run_id = None if dry_run else db.start_run(name)

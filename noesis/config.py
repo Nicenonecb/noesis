@@ -36,7 +36,21 @@ injected_prefixes = ["<environment_context>", "<user_instructions>", "# AGENTS.m
 [browser]
 enabled = ["chrome", "arc", "safari"]
 blacklist_domains = ["*.bank*", "1password.com", "mail.google.com", "localhost"]
+blacklist_url_regex = []
 max_page_chars = 200000
+
+[[browser.profiles_glob]]
+name = "chrome"
+glob = "~/Library/Application Support/Google/Chrome/{Default,Profile *}/History"
+kind = "chromium"
+[[browser.profiles_glob]]
+name = "arc"
+glob = "~/Library/Application Support/Arc/User Data/{Default,Profile *}/History"
+kind = "chromium"
+[[browser.profiles_glob]]
+name = "safari"
+glob = "~/Library/Safari/History.db"
+kind = "safari"
 
 [git]
 author_emails = []
@@ -112,7 +126,7 @@ def load_config(override: str | Path | None = None) -> Config:
             label = f"{name}.{key}" if key else name
             if type(actual) is not type(expected):
                 raise ConfigError(f"配置项 {label} 类型不正确。")
-            if isinstance(expected, list) and not all(isinstance(v, str) for v in actual):
+            if isinstance(expected, list) and key != 'profiles_glob' and not all(isinstance(v, str) for v in actual):
                 raise ConfigError(f"配置项 {label} 必须是字符串列表。")
             if type(expected) is int and actual < 1:
                 raise ConfigError(f"配置项 {label} 必须大于零。")
@@ -122,8 +136,17 @@ def load_config(override: str | Path | None = None) -> Config:
         raise ConfigError("timezone 必须是有效的 IANA 时区名称。") from None
     if data_root(values["data_dir"]) != root:
         raise ConfigError("config.toml 的 data_dir 与配置所在目录不一致，请使用 --data-dir 选择该目录。")
-    if set(values["browser"]["enabled"]) - {"chrome", "arc", "safari"}:
-        raise ConfigError("browser.enabled 仅支持 chrome、arc、safari。")
+    for profile in values['browser']['profiles_glob']:
+        if not isinstance(profile,dict) or not all(isinstance(profile.get(key),str) for key in ('name','glob','kind')) or profile['kind'] not in {'chromium','safari'}:
+            raise ConfigError('browser.profiles_glob 结构不正确。')
+    if set(values['browser']['enabled']) - {p['name'] for p in values['browser']['profiles_glob']}:
+        raise ConfigError('browser.enabled 包含没有配置路径的浏览器。')
+    import re
+    try:
+        for pattern in values['browser']['blacklist_url_regex']:
+            re.compile(pattern)
+    except re.error:
+        raise ConfigError('browser.blacklist_url_regex 不是有效正则。') from None
     for section, keys in {"claude_code": ["root"], "codex": ["sessions_root", "history_file"]}.items():
         for key in keys:
             if not Path(values[section][key]).expanduser().is_absolute():

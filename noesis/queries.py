@@ -110,6 +110,18 @@ def project_rows(conn):
         "SELECT id,meta FROM events WHERE source IN ('claude_code','codex')")]
 
 
+def browser_visits(conn, kind, cursor):
+    if kind=='chromium':
+        sql='''SELECT v.id,v.visit_time,v.transition,v.visit_duration,v.from_visit,u.url,u.title
+               FROM visits v JOIN urls u ON u.id=v.url
+               WHERE v.visit_time>? OR (v.visit_time=? AND v.id>?) ORDER BY v.visit_time,v.id'''
+    else:
+        sql='''SELECT hv.id,hv.visit_time,hv.title,hi.url FROM history_visits hv
+               JOIN history_items hi ON hi.id=hv.history_item
+               WHERE hv.visit_time>? OR (hv.visit_time=? AND hv.id>?) ORDER BY hv.visit_time,hv.id'''
+    return conn.execute(sql,(cursor['time'],cursor['time'],cursor['id']))
+
+
 def get_captures(conn, *, start, end):
     return get_events(conn, start=start, end=end, sources=["capture"], kinds=["capture"])
 

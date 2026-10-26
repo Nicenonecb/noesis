@@ -4,10 +4,11 @@ from collections import Counter
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
+import sqlite3
 
 from ..models import Event
+from ..projects import resolve_project
 from ..redact import redact
 
 
@@ -60,24 +61,40 @@ def make_event(source, identity, role, timestamp, text, session, cwd, path, line
     metadata["truncated"] = role == "assistant" and len(clean) > limit
     return Event(
         source=source, source_id=identity, kind=f"{role}_msg", ts=timestamp,
-        content=clean[:limit] if role == "assistant" else clean,
-        session_id=session, project=Path(cwd).name if cwd else None,
+        content=truncate(clean, limit) if role == "assistant" else clean,
+        session_id=session, project=resolve_project(cwd),
         raw_ref=f"{path}:{line}", meta=metadata,
     )
 
 
-def read_file(db, path, source, parse, *, replay=False):
-    """Commit each file and its cursor together; retain incomplete tails.
+def truncate(text, limit):
+    """The limit bounds retained content; the explanatory suffix is additional."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"…[truncated {len(text) - limit} chars]"
 
-    Verify the consumed prefix on every run to detect in-place edits even if the
-    inode and length are unchanged. This reads old bytes but only parses new lines.
+
+class FileReadError(OSError):
+    """A failed file can already have durable earlier batches."""
+
+    def __init__(self, counts, issues):
+        super().__init__("source read/checkpoint failed")
+        self.counts = counts
+        self.issues = issues
+
+
+def read_file(db, path, source, parse, *, replay=False):
+    """Checkpoint at most 500 complete records with their exact parser cursor.
+
+    Verify the old prefix to retain M1's same-size rewrite detection. Re-read
+    each new batch before committing it to detect concurrent changes in that
+    batch. Failure rolls back the current batch; earlier checkpoints survive.
     Replay rebuilds parser state without replacing the normal cursor.
     """
     counts = Counter(files=1)
     warnings = []
     key = str(path.resolve())
-    with db.connection:
-        db.connection.execute("BEGIN IMMEDIATE")
+    try:
         old = None if replay else db.get_cursor(source, key)
         with path.open("rb") as handle:
             stat = os.fstat(handle.fileno())
@@ -104,48 +121,64 @@ def read_file(db, path, source, parse, *, replay=False):
                 digest = hashlib.sha256()
                 if old:
                     counts["resets"] += 1
-            while handle.tell() < stat.st_size:
-                raw = handle.readline(stat.st_size - handle.tell())
-                if not raw.endswith(b"\n"):
-                    counts["pending_tails"] += 1
-                    break
-                digest.update(raw)
-                offset = handle.tell()
-                line_number += 1
-                counts["lines"] += 1
-                try:
-                    record = json.loads(raw)
-                    if not isinstance(record, dict):
-                        raise ValueError("record")
-                    event = parse(record, state, path, line_number)
-                except (ValueError, TypeError, KeyError, OverflowError) as exc:
-                    category = "unknown_records" if isinstance(exc, UnknownRecord) else "invalid_lines"
-                    counts[category] += 1
-                    if len(warnings) < 20:
-                        warnings.append({"file_hash": fingerprint(key), "line": line_number,
-                                         "error": category})
-                    continue
-                if event is None:
-                    counts["skipped"] += 1
-                elif db.insert_event(event):
-                    counts["inserted"] += 1
-                else:
-                    counts["duplicates"] += 1
-            # An in-place rewrite during this pass must not commit a mixed view.
-            handle.seek(0)
-            verification = hashlib.sha256()
-            remaining = offset
-            while remaining:
-                chunk = handle.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    raise OSError("source changed during collection")
-                verification.update(chunk)
-                remaining -= len(chunk)
-            if verification.digest() != digest.digest():
-                raise OSError("source changed during collection")
-            if not replay:
-                db.set_cursor(source, key, {
-                    "offset": offset, "line": line_number, "device": stat.st_dev,
-                    "inode": stat.st_ino, "prefix_hash": digest.hexdigest(), "state": state,
-                })
+            finished = False
+            while not finished:
+                batch_start = offset
+                batch_hash = hashlib.sha256()
+                batch_counts = Counter()
+                batch_warnings = []
+                with db.transaction():
+                    for _ in range(500):
+                        if handle.tell() >= stat.st_size:
+                            finished = True
+                            break
+                        raw = handle.readline(stat.st_size - handle.tell())
+                        if not raw.endswith(b"\n"):
+                            batch_counts["pending_tails"] += 1
+                            finished = True
+                            break
+                        digest.update(raw)
+                        batch_hash.update(raw)
+                        offset = handle.tell()
+                        line_number += 1
+                        batch_counts["lines"] += 1
+                        try:
+                            record = json.loads(raw)
+                            if not isinstance(record, dict):
+                                raise ValueError("record")
+                            event = parse(record, state, path, line_number)
+                        except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                            category = "unknown_records" if isinstance(exc, UnknownRecord) else "invalid_lines"
+                            batch_counts[category] += 1
+                            if len(batch_warnings) < 20:
+                                batch_warnings.append({"file_hash": fingerprint(key), "line": line_number,
+                                                       "error": category})
+                            continue
+                        if event is None:
+                            batch_counts["skipped"] += 1
+                        elif db.insert_event(event):
+                            batch_counts["inserted"] += 1
+                        else:
+                            batch_counts["duplicates"] += 1
+                    handle.seek(batch_start)
+                    verification = hashlib.sha256()
+                    remaining = offset - batch_start
+                    while remaining:
+                        chunk = handle.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise OSError("source changed during collection")
+                        verification.update(chunk)
+                        remaining -= len(chunk)
+                    if verification.digest() != batch_hash.digest():
+                        raise OSError("source changed during collection")
+                    if not replay:
+                        db.set_cursor(source, key, {
+                            "offset": offset, "line": line_number, "device": stat.st_dev,
+                            "inode": stat.st_ino, "size": stat.st_size, "mtime": stat.st_mtime_ns,
+                            "prefix_hash": digest.hexdigest(), "state": state,
+                        })
+                counts.update(batch_counts)
+                warnings.extend(batch_warnings[:max(0, 20 - len(warnings))])
+    except (OSError, sqlite3.Error) as exc:
+        raise FileReadError(counts, warnings) from exc
     return counts, warnings

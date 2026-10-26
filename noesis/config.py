@@ -149,7 +149,7 @@ def initialize(override: str | Path | None = None) -> Config:
     private_directory(root)
     write_template(root / "config.toml", default_config(root))
     config = load_config(root)
-    for name in ("db", "daily", "captures", "logs", "bin"):
+    for name in ("db", "daily", "captures", "logs", "bin", "run"):
         private_directory(root / name)
     write_template(root / "goals.yaml", GOALS_TEMPLATE)
     with Database(config.db_path):

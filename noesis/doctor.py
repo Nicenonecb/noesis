@@ -93,6 +93,18 @@ def diagnose(config: Config) -> list[Check]:
               "截图、AppleScript、launchd 需要 macOS" if sys.platform != "darwin" else ""),
     ]
     try:
+        probe = sqlite3.connect(":memory:")
+        try:
+            if sqlite3.sqlite_version_info < (3, 34, 0):
+                raise sqlite3.OperationalError("SQLite too old")
+            probe.execute("CREATE VIRTUAL TABLE probe USING fts5(text, tokenize='trigram')")
+        finally:
+            probe.close()
+        checks.append(Check("SQLite / FTS5", "ok", f"SQLite {sqlite3.sqlite_version}，trigram 可用"))
+    except sqlite3.Error:
+        checks.append(Check("SQLite / FTS5", "fail", f"SQLite {sqlite3.sqlite_version}，缺少 trigram 支持",
+                            "使用链接 SQLite ≥ 3.34 且启用 FTS5/trigram 的 Python 重新创建虚拟环境"))
+    try:
         connection = sqlite3.connect(config.db_path.as_uri() + "?mode=ro", uri=True)
         try:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
@@ -100,6 +112,9 @@ def diagnose(config: Config) -> list[Check]:
                 raise sqlite3.DatabaseError("schema version mismatch")
             connection.execute("SELECT id, source, ts, meta FROM events LIMIT 0")
             connection.execute("SELECT source, key, value FROM cursors LIMIT 0")
+            connection.execute("SELECT id,title,n_user,n_assistant FROM sessions LIMIT 0")
+            connection.execute("SELECT id,status,warnings FROM ingest_runs LIMIT 0")
+            connection.execute("SELECT rowid FROM events_fts WHERE events_fts MATCH 'noesis' LIMIT 0")
             if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise sqlite3.DatabaseError("integrity check failed")
         finally:

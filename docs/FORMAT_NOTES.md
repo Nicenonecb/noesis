@@ -1,5 +1,18 @@
 # 本机数据格式调研（M0）
 
+M1.0 公共层更新（2026-10-26）：数据库升级到 schema v2；原始会话格式判断不变。
+
+- 保留 M0 的 `events` 字段和 ID、UTC 微秒时间精度、哈希 cursor key 与 JSON cursor value。
+- 新增可空 `events.source_id`；旧记录无法从哈希还原原始 ID，查询返回时保留存储 ID，
+  不猜测、不重写旧事件身份。后续新写入记录保留经过脱敏的 source_id。
+- 新增 `sessions`、`ingest_runs`、FTS5 trigram 索引及三个同步触发器。迁移会为旧事件建索引，
+  并从已保存的对话事件生成会话摘要；暂用首条用户消息前 60 字作为标题。
+- 保留现有解析器的 source_id 规则和完整前缀指纹重写检测。事务改为每 500 条完整源记录
+  检查点；cursor 新增 size / mtime 字段，仍校验前缀，不以 mtime / size 相同为由跳过校验。
+- CLI 的旧 `skipped` 字段仍表示过滤掉的源记录；新的 CollectResult 和 ingest_runs.skipped
+  表示已存在的重复事件数，对应旧输出的 duplicates，避免改变旧接口语义。
+- 详细验收和新版计划尚未实现的采集差异见 `reports/M1.0.md`。
+
 M1 更新（2026-10-25）：采集器已实现，详见 `M1_REPORT.md`。
 本机新增观察到 `response_item.payload.type=configuration_update`，是配置事件，已过滤。
 下文 M0 边界与证据描述保留为历史调研记录。

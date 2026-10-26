@@ -5,9 +5,11 @@
 在本机采集个人活动，统一成 SQLite 事件，并在后续里程碑生成 Markdown 日志。
 代码位于 `~/Desktop/noesis`，数据位于 `~/NOESIS`；运行时代码只使用 Python 标准库。
 
-**当前已完成 M1。** 可用命令是 `init`、`doctor`、`collect`；支持手动增量采集
+**当前已有 M1 对话采集，并完成新版计划的 M1.0 公共层补强。** 可用命令是
+`init`、`doctor`、`collect`、`stats`、`search`；支持手动增量采集与检索
 Claude Code / Codex 对话。浏览历史、截图、快捷键、定时任务和 AI 提炼尚未启用。
-运行时代码不会发起网络请求。M1 验收与已知边界见 [M1_REPORT](docs/M1_REPORT.md)。
+运行时代码不会发起网络请求。原 M1 验收见 [M1_REPORT](docs/M1_REPORT.md)，
+本次公共层交付及新版计划的剩余差异见 [M1.0 报告](docs/reports/M1.0.md)。
 
 ## 命名说明
 
@@ -65,7 +67,8 @@ uv pip install --offline --no-build-isolation --python .venv/bin/python -e .
 
 ## 配置和诊断
 
-`init` 创建 config.toml、goals.yaml 模板、私有数据子目录、events/cursors 表和索引。
+`init` 创建 config.toml、goals.yaml 模板、私有数据子目录，以及事件、游标、会话、
+采集运行记录和全文索引。已有数据库通过事务迁移到 schema v2，保留旧事件和游标。
 重复运行保留配置、目标与事件。数据目录支持 `--data-dir /绝对路径` 或 NOESIS_DATA_DIR；
 自定义目录中的 config.toml.data_dir 必须与其所在目录一致，不允许存放在本代码仓库内。
 
@@ -85,31 +88,41 @@ noesis collect                         # 按配置采集两类对话
 noesis collect --source claude_code    # 仅 Claude Code
 noesis collect --source codex          # Codex sessions + history 补录
 noesis collect --replay                # 从头回放，按稳定 ID 去重，不改正常游标
+noesis stats                          # 来源数量、今天入库数、最近运行状态
+noesis search "数据库"                 # 本地全文搜索，返回带高亮的摘录
+noesis search "索引" --source codex --limit 20
 ```
 
 首次运行会处理全部已有会话，后续只解析追加的完整行。未结束的尾行留待下次；
 按 inode、长度和已消费字节的 SHA-256 识别轮换、截断和同长度重写。
 为保证重写检测，每次仍会读取旧字节验证指纹，I/O 成本随历史体积增长。
-每个文件的事件和游标一起提交，读取或写入失败时整文件事务回滚。
+每 500 条完整源记录的事件与游标一起提交，读取或写入失败时回滚当前批次，
+已完成的批次保留，下次从该检查点继续。每批写入前复核该批字节，防止读取期间改写。
+`collect` 使用 `run/collect.lock` 防止并发启动；竞争锁的进程打印一行提示并以 0 退出。
+采集摘要写入私有 `logs/noesis-YYYY-MM-DD.log`，每个来源独立记录运行状态。
 
 Claude Code 默认跳过 sidechain/subagents、元消息、工具结果和推理；工具只保留名称。
 Codex 支持 response_item、item_completed 和旧版 event_msg；同回合相同正文按各通道
 出现次数配对，保留单通道内重复发送的相同文本。只剥离已知控制包装，不按关键词删消息。
-助手正文先脱敏，再按配置截断；用户正文保留完整脱敏文本。
+助手正文先脱敏，再按配置截断并附加 `…[truncated N chars]`；该说明不占正文字符额度。
+用户正文保留完整脱敏文本。
 
 history 补录按会话、正文摘要和同一 UTC 秒与 session 消息配对，匹配多少条就移除多少条
 history 副本；迟到的 session 也会补做对账。跨秒不模糊合并，以免吞掉真实重复输入。
 
 输出 JSON 统计及最多 20 条/来源的诊断位置（路径哈希、行号、错误类别），不输出正文。
 `inserted` 是当次插入数，`history_reconciled` 是移除的历史副本数。
-退出码 0 表示完成，1 表示存在失败文件/损坏行，2 表示配置或运行错误。
+退出码 0 表示完成或已有采集进程而跳过，1 表示某来源 partial / failed（包括未知记录、
+损坏行、缺失来源或失败文件），2 表示配置或运行错误。
 未知类型和未找到的可选来源会在统计中提示；解析器升级后可用 `--replay` 重查。
 配置 `[sources]` 中的 `claude_code` / `codex` 开关对显式 `--source` 同样生效。
 
 Event 将时间规范为 UTC、用 sha1(source + "|" + source_id) 去重，capture 强制 high。
 Database 的写入接口统一脱敏正文、标题、URL、raw_ref、metadata 及 cursor 值；
 cursor.key 存原始逻辑键的 SHA-256，避免带秘密的路径在替换后发生键碰撞；
-调用方须在同一事务内写事件与 cursor。脱敏是模式匹配，无法保证识别所有自由文本中的秘密，
+调用方须在同一事务内写事件与 cursor。会话摘要与 metadata 局部更新同样经过脱敏。
+全文索引用 FTS5 trigram，少于 3 个字符时自动使用字面量 LIKE 匹配；`doctor` 检查实际支持。
+脱敏是模式匹配，无法保证识别所有自由文本中的秘密，
 也不会处理截图像素。日志或 Markdown 的后续写入必须复用脱敏模块，先脱敏后截断。
 
 fixture 全部合成；仓库忽略 SQLite、截图目录、日志、运行配置、bin 及虚拟环境。
@@ -121,6 +134,8 @@ M6 之前不引入网络代码；M6 可选且必须经用户确认后才能执�
 |---|---|
 | M0 脚手架、init/doctor、格式调研 | 已实现，验收结果见 M0_REPORT |
 | M1 Claude Code / Codex 增量采集 | 已实现，验收结果见 M1_REPORT |
+| 新版 M1.0 公共层补强 | 已实现，验收结果见 docs/reports/M1.0.md |
+| 新版 M1.1 / M1.2 对话采集增强 | 待补分块合并、格式增强、backfill / dry-run 等差异 |
 | M2 Git | 待实现 |
 | M3 浏览历史 | 待实现，Safari 需授权后补格式验证 |
 | M4 快捷键收藏 / OCR | 待实现 |

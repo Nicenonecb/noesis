@@ -115,23 +115,8 @@ def reconcile_history(db):
     Re-run after every pass so a later-arriving rollout can replace history-only
     input. Different seconds are intentionally not fuzzy-matched.
     """
-    from collections import Counter
-    import json
-    rows = db.connection.execute(
-        "SELECT id, ts, meta FROM events WHERE source='codex' AND kind='user_msg'"
-    ).fetchall()
-    main, history = Counter(), []
-    for row in rows:
-        meta = json.loads(row["meta"])
-        key = (meta.get("session_hash"), meta.get("text_hash"), row["ts"][:19])
-        if meta.get("channel") == "history":
-            history.append((row["id"], key, meta["history_occurrence"]))
-        else:
-            main[key] += 1
-    removed = 0
-    with db.connection:
-        for identity, key, occurrence in history:
-            if occurrence <= main[key]:
-                db.connection.execute("DELETE FROM events WHERE id=?", (identity,))
-                removed += 1
-    return removed
+    from ..queries import history_duplicates
+    identities = history_duplicates(db.connection)
+    with db.transaction():
+        db.delete_events(identities)
+    return len(identities)

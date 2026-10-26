@@ -1,6 +1,7 @@
 """Local initialization, diagnostics and one-shot conversation collection."""
 
 import argparse
+from dataclasses import asdict
 import json
 from pathlib import Path
 import sqlite3
@@ -10,6 +11,7 @@ from . import __version__
 from .config import ConfigError, initialize, load_config
 from .doctor import diagnose
 from .redact import redact
+from .runtime import AlreadyRunning, run_logger
 
 
 def parser() -> argparse.ArgumentParser:
@@ -25,6 +27,13 @@ def parser() -> argparse.ArgumentParser:
     collect.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
     collect.add_argument("--source", choices=["all", "claude_code", "codex"], default="all")
     collect.add_argument("--replay", action="store_true", help="重读完整来源，幂等回填且不改变增量游标")
+    stats = sub.add_parser("stats", help="查看来源事件数量与最近采集状态")
+    stats.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
+    search = sub.add_parser("search", help="搜索本地记录（中文短词同样支持）")
+    search.add_argument("query")
+    search.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS)
+    search.add_argument("--source", choices=["claude_code", "codex", "git", "browser_history", "capture"])
+    search.add_argument("--limit", type=int, default=50)
     for name, help_text in [("init", "初始化目录、配置与数据库，可重复运行"), ("doctor", "只读检查路径与权限，列出手动操作")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS, help="数据目录")
@@ -41,11 +50,28 @@ def main(argv: list[str] | None = None) -> int:
             print(redact(f"✅ 初始化完成：{config.root}（保留已有配置与数据）"))
             return 0
         config = load_config(args.data_dir)
+        if args.command in {"stats", "search"}:
+            from . import queries
+            # Read-only commands never migrate or acquire the writer lock.
+            connection = sqlite3.connect(config.db_path.as_uri() + "?mode=ro", uri=True)
+            connection.row_factory = sqlite3.Row
+            try:
+                if args.command == "stats":
+                    output = asdict(queries.stats(connection, tz=config.timezone))
+                else:
+                    hits = queries.search(connection, args.query, limit=args.limit, sources=args.source)
+                    output = [{"id": hit.event.id, "source": hit.event.source, "ts": hit.event.ts,
+                               "project": hit.event.project, "title": hit.event.title,
+                               "snippet": hit.snippet} for hit in hits]
+                print(json.dumps(output, ensure_ascii=False, sort_keys=True))
+                return 0
+            finally:
+                connection.close()
         if args.command == "collect":
             from .collectors.collect import collect
             results = collect(config, args.source, replay=args.replay)
             print(json.dumps(results, ensure_ascii=False, sort_keys=True))
-            return 1 if any(result.get("failed_files") or result.get("invalid_lines")
+            return 1 if any(result.get("status") in {"partial", "failed"}
                             for result in results.values()) else 0
         checks = diagnose(config)
         for check in checks:
@@ -54,6 +80,11 @@ def main(argv: list[str] | None = None) -> int:
         manual = sum(check.status == "manual" for check in checks)
         print(f"诊断完成：{failed} 项失败，{manual} 项需要手动验证；未启动采集或定时任务。")
         return 1 if args.strict and failed else 0
+    except AlreadyRunning as exc:
+        with run_logger(config) as logger:
+            logger.info(str(exc))
+        print(str(exc))
+        return 0
     except ConfigError as exc:
         print(f"❌ {exc}", file=sys.stderr)
     except (OSError, sqlite3.Error, ValueError) as exc:

@@ -36,7 +36,7 @@ def morning_run(config, *, unlocked=False, unlock_event=False, now=None):
         state = read_state(config, delivery)
         target = config.root / 'briefings' / (delivery + '.json')
         if not target.exists():
-            transient = state.get('error') in {'network_unavailable_or_timeout', 'keychain_unavailable', 'keychain_locked_or_denied', 'http_429'} or state.get('error', '').startswith('http_5')
+            transient = state.get('error') in {'network_unavailable_or_timeout', 'api_key_missing', 'http_429'} or state.get('error', '').startswith('http_5')
             recovery = unlock_event and transient and not state.get('unlock_retry_used')
             retry_due = not state.get('last_attempt') or now - datetime.fromisoformat(state['last_attempt']) >= timedelta(minutes=30)
             if (state['attempts'] < 3 and retry_due) or recovery:

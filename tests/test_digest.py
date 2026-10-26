@@ -58,7 +58,8 @@ def test_generate_cache_repair_force_and_escaped_html(config, monkeypatch):
     day = datetime.now(config.timezone).date() - timedelta(days=1)
     add_event(config, day, content='<script>alert(1)</script> sk-' + 'X' * 24)
     calls = []
-    def model(settings, system, payload):
+    def model(settings, system, payload, *, env_file=None):
+        assert env_file == config.root / '.env'
         calls.append(payload)
         value = output(payload)
         value['summary'] = '<img src="https://example.invalid/private"> sk-' + 'Y' * 24
@@ -85,7 +86,7 @@ def test_generate_cache_repair_force_and_escaped_html(config, monkeypatch):
 def test_invalid_references_never_save_success(config, monkeypatch):
     day = date(2026, 10, 22)
     add_event(config, day)
-    def model(settings, system, payload):
+    def model(settings, system, payload, *, env_file=None):
         value = output(payload)
         value['progress'][0]['refs'] = ['invented']
         return value, {}, 'deepseek-flash'
@@ -137,7 +138,7 @@ def test_schedule_retries_bounded_and_failure_not_claimed_as_success(config, mon
         morning_run(config, now=now + timedelta(minutes=minute), unlocked=True)
     assert len(calls) == 3
     assert not (config.root / 'briefings' / (today.isoformat() + '.json')).exists()
-    # A real unlock can recover once after an overnight network/keychain outage.
+    # A real unlock can recover once after an overnight network outage or missing environment key.
     morning_run(config, now=now + timedelta(hours=3), unlocked=True, unlock_event=True)
     morning_run(config, now=now + timedelta(hours=4), unlocked=True, unlock_event=True)
     assert len(calls) == 4
@@ -153,20 +154,79 @@ def test_collection_lock_conflict_does_not_consume_model_retry(config, monkeypat
     assert not (config.root / 'run/morning-state.json').exists()
 
 
-def test_keychain_is_captured_not_printed(monkeypatch, capsys):
+def test_environment_key_is_not_printed_or_read_from_keychain(monkeypatch, capsys, tmp_path):
+    secret = 'sk-' + 'S' * 24
+    def forbidden(*args, **kwargs):
+        raise AssertionError('credential access must not start subprocesses')
+    monkeypatch.setattr('subprocess.run', forbidden)
+    monkeypatch.setenv('DEEPSEEK_API_KEY', secret)
+    assert client.api_key() == secret
+    monkeypatch.delenv('DEEPSEEK_API_KEY')
+    with pytest.raises(client.DigestError, match='api_key_missing'):
+        client.api_key(tmp_path / '.env')
+    assert not capsys.readouterr().out
+
+
+def test_local_environment_rotation_permissions_and_process_override(config, monkeypatch):
+    import stat
+    monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+    path = config.root / '.env'
+    path.write_text('# local settings\nOTHER_SETTING=keep\nexport DEEPSEEK_API_KEY=old\nDEEPSEEK_API_KEY=duplicate\n')
+    path.chmod(0o644)
+    secret = 'sk-' + 'S' * 24
+    client.save_api_key(path, secret)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert path.read_text().count('DEEPSEEK_API_KEY=') == 1
+    assert 'OTHER_SETTING=keep' in path.read_text()
+    assert client.api_key(path) == secret
+    client.save_api_key(path, 'rotated-synthetic')
+    assert client.api_key(path) == 'rotated-synthetic'
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'process-override')
+    path.write_text('DEEPSEEK_API_KEY="unclosed')
+    assert client.api_key(path) == 'process-override'
+
+
+@pytest.mark.parametrize('line,expected', [
+    ('export DEEPSEEK_API_KEY="synthetic" # comment', 'synthetic'),
+    ("DEEPSEEK_API_KEY='literal$(not_executed)'", 'literal$(not_executed)'),
+])
+def test_local_environment_quotes_and_literal_values(config, monkeypatch, line, expected):
+    monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+    path = config.root / '.env'
+    path.write_text(line + '\n')
+    assert client.api_key(path) == expected
+
+
+@pytest.mark.parametrize('value', ['"unclosed', 'two words', '', '"has space"'])
+def test_invalid_local_environment_has_fixed_error_without_secret(config, monkeypatch, value):
+    monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+    path = config.root / '.env'
+    path.write_text('DEEPSEEK_API_KEY=' + value)
+    with pytest.raises(client.DigestError) as error:
+        client.api_key(path)
+    assert str(error.value) == 'api_key_invalid'
+
+
+def test_cli_key_entry_and_model_check_use_selected_data_directory(config, monkeypatch, capsys):
+    from noesis.cli import main
     monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
     secret = 'sk-' + 'S' * 24
-    def run(args, **kwargs):
-        assert secret not in str(args) and kwargs['capture_output']
-        return SimpleNamespace(returncode=0, stdout=secret + '\n')
-    monkeypatch.setattr(client.subprocess, 'run', run)
-    assert client.api_key() == secret
-    assert not capsys.readouterr().out
+    monkeypatch.setattr('sys.stdin.isatty', lambda: True)
+    monkeypatch.setattr('getpass.getpass', lambda prompt: secret)
+    assert main(['digest-key', '--data-dir', str(config.root)]) == 0
+    assert secret not in capsys.readouterr().out
+    def check(env_file):
+        assert env_file == config.root / '.env'
+        assert client.api_key(env_file) == secret
+        return {'model': 'deepseek-flash', 'available': True}
+    monkeypatch.setattr(client, 'check_model', check)
+    assert main(['digest-check', '--data-dir', str(config.root)]) == 0
+    assert secret not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize('status,expected_calls', [(429, 2), (503, 2), (401, 1), (402, 1), (302, 1)])
 def test_http_retry_policy_and_no_provider_body_leak(monkeypatch, status, expected_calls):
-    monkeypatch.setattr(client, 'api_key', lambda: 'synthetic')
+    monkeypatch.setattr(client, 'api_key', lambda env_file=None: 'synthetic')
     monkeypatch.setattr(client.time, 'sleep', lambda n: None)
     calls = []
     def fail(req, **kwargs):
@@ -180,14 +240,15 @@ def test_http_retry_policy_and_no_provider_body_leak(monkeypatch, status, expect
 
 
 def test_client_json_mode_and_truncation_rejection(monkeypatch, config):
-    def respond(path, *, body, timeout):
+    def respond(path, *, body, timeout, env_file=None):
+        assert env_file == config.root / '.env'
         assert body['model'] == 'deepseek-flash'
         assert body['response_format'] == {'type': 'json_object'}
         assert 'tools' not in body and body['thinking']['type'] == 'disabled'
         return {'choices': [{'finish_reason': 'length', 'message': {'content': '{}'}}]}
     monkeypatch.setattr(client, 'request', respond)
     with pytest.raises(client.DigestError, match='incomplete_generation'):
-        client.complete(config.values['digest'], 'json', {})
+        client.complete(config.values['digest'], 'json', {}, env_file=config.root / '.env')
 
 
 def test_ai_install_schedule_and_uninstall_keep_key_and_reports(config, tmp_path, monkeypatch):
@@ -228,6 +289,7 @@ def test_installed_runtime_does_not_need_the_desktop_checkout(config, tmp_path):
     config_path = config.root / 'config.toml'
     config_path.write_text(config_path.read_text().replace('[digest]\nenabled = false', '[digest]\nenabled = true'))
     Path(generated['path']).unlink()
+    (config.root / '.env').write_text('DEEPSEEK_API_KEY="broken')
     result = subprocess.run([str(config.root / 'bin/noesis'), 'digest', '--date', day.isoformat(), '--data-dir', str(config.root)],
                             cwd=tmp_path, capture_output=True, text=True, check=True,
                             env={'PATH':'/usr/bin:/bin', 'PYTHONPATH':'/does/not/exist'})

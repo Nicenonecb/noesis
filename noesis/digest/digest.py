@@ -107,7 +107,7 @@ def generate(config, day, *, force=False):
             return {'status': 'cached', 'delivery_day': delivery, 'path': str(target.with_suffix('.html'))}
         payload, health = snapshot(config, day)
         if payload['evidence']:
-            raw, usage, response_model = client.complete(config.values['digest'], SYSTEM, payload)
+            raw, usage, response_model = client.complete(config.values['digest'], SYSTEM, payload, env_file=config.root / '.env')
             result = validate(raw, payload['evidence'])
             mode = 'model'
         else:

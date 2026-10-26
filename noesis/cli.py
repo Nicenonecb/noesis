@@ -80,8 +80,10 @@ def parser() -> argparse.ArgumentParser:
     digest.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     digest.add_argument('--date',default='yesterday')
     digest.add_argument('--force',action='store_true',help='重新调用模型，替换已有晨报')
-    model=sub.add_parser('digest-check',help='检查钥匙串与官方模型接口')
-    model.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    for command, help_text in [('digest-check','检查本地环境变量与官方模型接口'),
+                               ('digest-key','隐藏输入 DeepSeek Key，保存到数据目录 .env')]:
+        model=sub.add_parser(command,help=help_text)
+        model.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     morning=sub.add_parser('morning-run',help='按计划生成晨报；解锁后请求展示')
     morning.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     morning.add_argument('--unlocked',action='store_true')
@@ -107,14 +109,24 @@ def main(argv: list[str] | None = None) -> int:
             print(redact(f"✅ 初始化完成：{config.root}（保留已有配置与数据）"))
             return 0
         config = load_config(args.data_dir)
-        if args.command in {'digest','digest-check','morning-run','morning-ack'}:
+        if args.command in {'digest','digest-key','digest-check','morning-run','morning-ack'}:
             from datetime import date,datetime
             from .digest import client
             from .digest.digest import generate
             from .digest.schedule import morning_run,acknowledge
             try:
-                if args.command=='digest-check':
-                    result=client.check_model()
+                if args.command=='digest-key':
+                    import getpass
+                    if not sys.stdin.isatty():
+                        raise client.DigestError('interactive_terminal_required')
+                    try:
+                        key=getpass.getpass('DeepSeek API Key（隐藏输入）: ')
+                    except (EOFError,KeyboardInterrupt):
+                        return 130
+                    client.save_api_key(config.root / '.env',key)
+                    result={'status':'saved','variable':client.ENV_NAME,'path':str(config.root / '.env')}
+                elif args.command=='digest-check':
+                    result=client.check_model(config.root / '.env')
                 elif args.command=='digest':
                     selected=datetime.now(config.timezone).date()-timedelta(days=1) if args.date=='yesterday' else date.fromisoformat(args.date)
                     result=generate(config,selected,force=args.force)

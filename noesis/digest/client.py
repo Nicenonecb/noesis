@@ -2,34 +2,57 @@
 
 import json
 import os
-import subprocess
+import shlex
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
+from ..files import atomic_write
+
 API = 'https://api.deepseek.com'
-KEYCHAIN_SERVICE = 'com.justin.noesis.deepseek'
+ENV_NAME = 'DEEPSEEK_API_KEY'
 
 
 class DigestError(ValueError):
     """Only a fixed, non-sensitive code may be surfaced to the CLI/logs."""
 
 
-def api_key():
-    key = os.environ.get('DEEPSEEK_API_KEY', '').strip()
+def validate_key(key):
+    key = key.strip()
     if not key:
-        try:
-            result = subprocess.run(
-                ['security', 'find-generic-password', '-a', 'noesis', '-s', KEYCHAIN_SERVICE, '-w'],
-                capture_output=True, text=True, timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            raise DigestError('keychain_unavailable') from None
-        if result.returncode:
-            raise DigestError('api_key_missing' if result.returncode == 44 else 'keychain_locked_or_denied')
-        key = result.stdout.strip()
-    if not key or any(char.isspace() for char in key):
+        raise DigestError('api_key_missing')
+    if any(char.isspace() for char in key):
         raise DigestError('api_key_invalid')
     return key
+
+
+def env_assignment(line):
+    name, _, value = line.strip().removeprefix('export ').partition('=')
+    return name.strip(), value.strip()
+
+
+def api_key(env_file=None):
+    key = os.environ.get(ENV_NAME)
+    if key is None and env_file is not None and env_file.exists():
+        for line in env_file.read_text().splitlines():
+            name, value = env_assignment(line)
+            if name == ENV_NAME:
+                try:
+                    parts = shlex.split(value, comments=True)
+                except ValueError:
+                    raise DigestError('api_key_invalid') from None
+                if len(parts) != 1:
+                    raise DigestError('api_key_invalid')
+                key = parts[0]
+    return validate_key(key or '')
+
+
+def save_api_key(env_file, key):
+    key = validate_key(key)
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    lines = [line for line in lines if env_assignment(line)[0] != ENV_NAME]
+    lines.append(ENV_NAME + '=' + shlex.quote(key))
+    atomic_write(env_file, '\n'.join(lines) + '\n')  # Atomic replacement uses mode 0600.
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -37,8 +60,8 @@ class NoRedirect(HTTPRedirectHandler):
         return None  # Never forward the Authorization header to another endpoint.
 
 
-def request(path, *, body=None, timeout=90):
-    key = api_key()
+def request(path, *, body=None, timeout=90, env_file=None):
+    key = api_key(env_file)
     data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
     req = Request(API + path, data=data, headers={
         'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
@@ -68,8 +91,8 @@ def request(path, *, body=None, timeout=90):
             raise DigestError('invalid_response') from None
 
 
-def check_model():
-    data = request('/models', timeout=20)
+def check_model(env_file=None):
+    data = request('/models', timeout=20, env_file=env_file)
     items = data.get('data')
     if not isinstance(items, list):
         raise DigestError('invalid_response')
@@ -80,13 +103,13 @@ def check_model():
     return {'model': 'deepseek-flash', 'available': True}
 
 
-def complete(settings, system, payload):
+def complete(settings, system, payload, *, env_file=None):
     response = request('/chat/completions', timeout=settings['request_timeout'], body={
         'model': settings['model'], 'messages': [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}],
         'thinking': {'type': 'disabled'}, 'temperature': 0.2,
-        'response_format': {'type': 'json_object'}, 'max_tokens': settings['max_tokens'], 'stream': False})
+        'response_format': {'type': 'json_object'}, 'max_tokens': settings['max_tokens'], 'stream': False}, env_file=env_file)
     try:
         choice = response['choices'][0]
         if choice.get('finish_reason') != 'stop':

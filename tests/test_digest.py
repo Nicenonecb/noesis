@@ -29,9 +29,86 @@ def add_event(config, day, *, identity='one', content='已经修复解析器并�
 
 
 def output(payload):
+    refs = [payload['evidence'][0]['id']]
     return {'summary': '已推进解析器工作。', 'completed': [],
-            'progress': [{'text': '对话中报告解析器已修复。', 'refs': [payload['evidence'][0]['id']]}],
+            'tasks': [{'id': 'T1', 'state': 'active', 'text': '解析器等待验收。', 'refs': refs}],
+            'progress': [{'task_id': 'T1', 'text': '对话中报告解析器已修复，等待验收。', 'refs': refs}],
             'unfinished': [], 'priorities': []}
+
+
+@pytest.mark.parametrize('state', ['completed', 'abandoned', 'deferred'])
+@pytest.mark.parametrize('section', ['progress', 'unfinished', 'priorities'])
+def test_resolved_tasks_cannot_reappear_as_open_work(config, monkeypatch, state, section):
+    day = date(2026, 10, 22)
+    add_event(config, day)
+    def model(settings, system, payload, *, env_file=None):
+        value = output(payload)
+        value['tasks'][0]['state'] = state
+        item = value['progress'].pop()
+        value[section] = [item]
+        return value, {}, 'deepseek-flash'
+    monkeypatch.setattr(client, 'complete', model)
+    with pytest.raises(client.DigestError, match='inconsistent_task_state'):
+        generate(config, day)
+    assert not list((config.root / 'briefings').glob('*'))
+
+
+def test_reconciled_tasks_preserve_decision_and_completion_evidence():
+    evidence = [{'id': f'E{i}'} for i in range(1, 5)]
+    value = {'summary': '旧方案已放弃，导出已完成，下一步验证同步。',
+             'tasks': [
+                 {'id': 'T1', 'state': 'abandoned', 'text': '用户放弃旧方案。', 'refs': ['E1', 'E2']},
+                 {'id': 'T2', 'state': 'completed', 'text': '导出已完成。', 'refs': ['E3']},
+                 {'id': 'T3', 'state': 'active', 'text': '同步待验证。', 'refs': ['E4']}],
+             'completed': [{'task_id': 'T2', 'text': '对话中报告导出完成。', 'refs': ['E3']}],
+             'progress': [], 'unfinished': [],
+             'priorities': [{'task_id': 'T3', 'text': '验证同步，待确认。', 'refs': ['E4']}]}
+    result = validate(value, evidence)
+    assert result['tasks'] == value['tasks']
+    assert result['priorities'][0]['task_id'] == 'T3'
+    value['priorities'][0]['refs'] = ['E1']
+    with pytest.raises(client.DigestError, match='missing_task_state_evidence'):
+        validate(value, evidence)
+
+
+@pytest.mark.parametrize('mutation,error', [
+    (lambda v: v.pop('tasks'), 'invalid_task_schema'),
+    (lambda v: v['tasks'].append(dict(v['tasks'][0])), 'invalid_task_schema'),
+    (lambda v: v['tasks'][0].update(state='invented'), 'invalid_task_schema'),
+    (lambda v: v['tasks'][0].update(refs=['missing']), 'invalid_evidence_reference'),
+    (lambda v: v['progress'][0].update(task_id='missing'), 'invalid_task_reference'),
+    (lambda v: v['progress'][0].update(task_id=[]), 'invalid_task_reference'),
+    (lambda v: v['tasks'][0].update(state='uncertain'), 'inconsistent_task_state'),
+])
+def test_invalid_task_reconciliation_is_rejected(mutation, error):
+    evidence = [{'id': 'E1'}]
+    value = output({'evidence': evidence})
+    mutation(value)
+    with pytest.raises(client.DigestError, match=error):
+        validate(value, evidence)
+
+
+def test_legacy_cache_renders_and_failed_regeneration_preserves_it(config, monkeypatch):
+    day = date(2026, 10, 22)
+    add_event(config, day)
+    monkeypatch.setattr(client, 'complete', lambda settings, system, payload, **kw: (output(payload), {}, 'deepseek-flash'))
+    path = Path(generate(config, day)['path'])
+    target = path.with_suffix('.json')
+    record = json.loads(target.read_text())
+    record['prompt_version'] = 1
+    record['result'].pop('tasks')
+    record['result']['progress'][0].pop('task_id')
+    target.write_text(json.dumps(record))
+    def model(settings, system, payload, **kw):
+        value = output(payload)
+        value['tasks'][0]['state'] = 'abandoned'
+        return value, {}, 'deepseek-flash'
+    monkeypatch.setattr(client, 'complete', model)
+    assert generate(config, day)['status'] == 'cached'
+    originals = {p: p.read_bytes() for p in [target, path, path.with_suffix('.md')]}
+    with pytest.raises(client.DigestError, match='inconsistent_task_state'):
+        generate(config, day, force=True)
+    assert all(p.read_bytes() == content for p, content in originals.items())
 
 
 def mock_collection(monkeypatch):

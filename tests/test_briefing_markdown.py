@@ -37,6 +37,43 @@ def rendered(tmp_path, record):
     return path.with_suffix('.html').read_text(), path.with_suffix('.md').read_text()
 
 
+def test_project_labels_use_current_task_project_in_every_section(tmp_path):
+    record = report()
+    record['evidence'][0]['project'] = 'original-project'
+    record['result']['tasks'] = [{'id': 'T1', 'projects': ['new-project', 'shared-project']}]
+    item = {**record['result']['priorities'][0], 'task_id': 'T1'}
+    for key in ('priorities', 'completed', 'progress', 'unfinished'):
+        record['result'][key] = [item]
+    html, md = rendered(tmp_path, record)
+    assert html.count('<span class="project-tag">new-project</span>') == 4
+    assert html.count('<span class="project-tag">shared-project</span>') == 4
+    assert md.count('**new-project · shared-project**') == 4
+    assert '来源项目：original-project' not in html
+
+
+def test_old_reports_use_source_project_and_unknown_projects_are_explicit(tmp_path):
+    record = report()
+    record['evidence'][0]['project'] = 'original-project'
+    html, _ = rendered(tmp_path, record)
+    assert '<span class="project-tag">来源项目：original-project</span>' in html
+    record['result']['tasks'] = [{'id': 'T1', 'projects': []}]
+    record['result']['priorities'][0]['task_id'] = 'T1'
+    html, _ = rendered(tmp_path, record)
+    assert '<span class="project-tag">未归属项目</span>' in html
+
+
+def test_project_labels_are_literal_in_html_and_markdown(tmp_path):
+    record = report()
+    project = '<img src=x> **bold** [link](https://example.invalid)'
+    record['result']['tasks'] = [{'id': 'T1', 'projects': [project]}]
+    record['result']['priorities'][0]['task_id'] = 'T1'
+    html, md = rendered(tmp_path, record)
+    for document in (Document(html), Document(render_markdown(md, 'export'))):
+        assert project in ''.join(document.text)
+        assert not any(tag == 'img' or (tag == 'a' and attrs.get('href') == 'https://example.invalid')
+                       for tag, attrs in document.tags)
+
+
 def test_browser_entities_are_decoded_and_duplicate_title_is_not_rendered(tmp_path):
     value = '示例 &quot;标题&quot; &amp; 说明'
     html, md = rendered(tmp_path, report(source='browser_history', title=value, text=value))

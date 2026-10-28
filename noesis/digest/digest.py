@@ -12,7 +12,7 @@ from ..runtime import file_lock, collection_lock, run_logger
 from ..timeutils import day_range
 from . import client
 
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 SECTIONS = ('completed', 'progress', 'unfinished', 'priorities')
 SECTION_STATES = {'completed': {'completed'}, 'progress': {'active'},
                   'unfinished': {'active', 'uncertain'}, 'priorities': {'active'}}
@@ -32,7 +32,10 @@ SYSTEM = '''你为用户生成中文每日晨报。输入是昨天的本机活�
    例如构建成功不等于安装验收完成，提交成功不等于权限已修改。旧阻塞被后续直接证据解除时删除；
    后续已有推进却无法确认旧阻塞是否解除时，记为 uncertain，准确描述缺少哪项确认，不要求重做旧操作，
    也不能仅凭“没有看到完成”就恢复旧任务。截断/缺失的摘录不可推断其未展示的内容。
-4. tasks 最多 32 项，每项含唯一 id、state、text、refs。state 只能为 completed（完成）、
+4. tasks 最多 32 项，每项含唯一 id、projects、state、text、refs。projects 是项目名数组（最多 8 个），
+   必须依据摘录判断事项实际归属；项目拆分后使用当前实际工作的项目名，不照搬原会话所属项目。
+   只有确实涉及多个项目才列多个；无法确定或不属于项目时用空数组，不凭关键词猜测。
+   state 只能为 completed（完成）、
    active（仍在推进）、abandoned（放弃）、deferred（搁置）、uncertain（状态证据不足或冲突）。
    text 简述当前状态及变更原因，最多 500 字；refs 引用支持当前判定的证据，尤其是后续用户决定、
    最新结果；跨来源改变状态时同时引用相关的早期与后续证据。不要遗漏会影响待办的否决或完成证据。
@@ -41,7 +44,7 @@ goals_yaml 中 active: false 的目标是未启用模板，不得用于规划。
 completed 只引用 completed 事项，progress 只引用 active 事项，unfinished 只引用 active/uncertain 事项。
 abandoned/deferred 事项只保留在状态表或概述中，不得出现在四个栏目；建议不足三项时宁可留空，不凑数。
 输出严格 JSON：
-{"tasks":[{"id":"T1", "state":"completed", "text":"当前状态及判断依据", "refs":["E1"]}],
+{"tasks":[{"id":"T1", "projects":["示例项目"], "state":"completed", "text":"当前状态及判断依据", "refs":["E1"]}],
  "summary":"昨日概述，最多250字", "completed":[{"task_id":"T1", "text":"成果及证据边界", "refs":["E1"]}],
  "progress":[], "unfinished":[], "priorities":[]}
 四个栏目数组元素格式相同，task_id 必须对应 tasks 的 id；text 最多 500 字。
@@ -116,6 +119,12 @@ def validate(value, evidence):
                 or not isinstance(state, str) or state not in {'completed', 'active', 'abandoned', 'deferred', 'uncertain'}):
             raise client.DigestError('invalid_task_schema')
         by_id[identity] = {'id': identity, 'state': state, **statement}
+        if 'projects' in task:
+            projects = task['projects']
+            if (not isinstance(projects, list) or len(projects) > 8
+                    or not all(isinstance(p, str) and 1 <= len(p.strip()) <= 100 for p in projects)):
+                raise client.DigestError('invalid_task_projects')
+            by_id[identity]['projects'] = list(dict.fromkeys(p.strip() for p in projects))
     result = {'summary': value['summary'], 'tasks': list(by_id.values())}
     for key in SECTIONS:
         items = value.get(key)

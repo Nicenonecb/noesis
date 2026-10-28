@@ -88,6 +88,22 @@ def test_invalid_task_reconciliation_is_rejected(mutation, error):
         validate(value, evidence)
 
 
+@pytest.mark.parametrize('projects', ['demo', [None], [' '], ['x' * 101], ['x'] * 9])
+def test_invalid_project_labels_are_rejected(projects):
+    evidence = [{'id': 'E1'}]
+    value = output({'evidence': evidence})
+    value['tasks'][0]['projects'] = projects
+    with pytest.raises(client.DigestError, match='invalid_task_projects'):
+        validate(value, evidence)
+
+
+def test_project_labels_survive_validation_and_are_deduplicated():
+    evidence = [{'id': 'E1'}]
+    value = output({'evidence': evidence})
+    value['tasks'][0]['projects'] = [' demo-copy ', 'demo-copy', 'shared']
+    assert validate(value, evidence)['tasks'][0]['projects'] == ['demo-copy', 'shared']
+
+
 def test_legacy_cache_renders_and_failed_regeneration_preserves_it(config, monkeypatch):
     day = date(2026, 10, 22)
     add_event(config, day)

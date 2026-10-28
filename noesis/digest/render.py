@@ -5,6 +5,8 @@ from html import escape, unescape
 import json
 
 from ..files import write_if_changed
+from ..focus import OUTCOMES, due_focuses, local_day
+from ..runtime import file_lock
 from ..capture.render import single_line
 from ..render.markdown import export_markdown, render_markdown
 
@@ -31,7 +33,81 @@ details{margin-top:24px;padding:20px;background:#fff;border-radius:12px}.evidenc
 .markdown-body hr{border:0;border-top:1px solid #dce2d8;margin:22px 0}.markdown-body .task-list-item{list-style:none}
 .markdown-body .task-list-item-checkbox{margin:0 7px 0 -18px;accent-color:#507b48}.references{margin-top:8px;font-size:13px}
 .image-reference{color:#65766b;font-size:14px}.grid section{min-width:0}footer{margin-top:22px}
+.checkin{margin-bottom:24px}.checkin article+article{border-top:1px solid #ccd4c9;margin-top:20px;padding-top:12px}
+.checkin-actions{display:flex;gap:10px;flex-wrap:wrap}.checkin-actions a{padding:5px 12px;border:1px solid #aec5a0;border-radius:8px;text-decoration:none}
 @media(max-width:700px){.grid{grid-template-columns:1fr}h1{font-size:28px}main{padding:24px 16px}}'''
+
+
+def literal_markdown(text):
+    return ''.join(f'&#{ord(c)};' if c in '\\`*_{}[]<>()#+!|~&:' else c for c in single_line(text))
+
+
+def render_focus(focuses, advice=(), *, delivery=None):
+    interactive = delivery is not None
+    html = ['<section class="focus checkin"><h2>今天，朝想成为的自己走一步</h2>']
+    md = ['## 主动跟进 · 你的发展方向', '']
+    by_id = {item['focus_id']: item for item in advice}
+    if not focuses:
+        text = '今天没有待反馈的方向。已反馈或延后的方向会在下次到期时跟进；新设置的方向从次日开始提醒。'
+        html.append('<p>' + text + '</p>')
+        md += [text, '']
+    for item in focuses:
+        identity = item['id']
+        last = item['last_checkin']
+        feedback = ('最近反馈（' + last['day'] + '）：' + OUTCOMES[last['outcome']] +
+                    ('；' + last['note'] if last['note'] else '')) if last else '还没有你的反馈；记录不足不代表没有行动。'
+        question = '上次约定的行动推进了吗？今天先留出一点时间，完成这一步；遇到阻碍也可以如实记录。'
+        suggestion = by_id.get(identity)
+        if suggestion and suggestion['revision'] != item['revision']:
+            suggestion = None  # Editing or answering invalidates cached coaching.
+        html += ['<article><h3>' + escape(item['title']) + '</h3>',
+                 '<p>想发展的方向：' + escape(item['direction']) + '</p>',
+                 '<p><strong>你的具体行动：</strong>' + escape(item['step']) + '</p>',
+                 '<p class="muted">' + escape(feedback) + '</p>', '<p>' + question + '</p>']
+        md += ['### ' + literal_markdown(item['title']), '',
+               '想发展的方向：' + literal_markdown(item['direction']), '',
+               '你的具体行动：' + literal_markdown(item['step']), '', literal_markdown(feedback), '', question, '']
+        if suggestion:
+            html.append('<div class="markdown-body">' + render_markdown(suggestion['text'], 'focus-' + identity) + '</div>')
+            html.append('<div class="references">' + ' '.join(f'<a href="#{ref}">[{ref}]</a>' for ref in suggestion['refs']) + '</div>')
+            md += [export_markdown(suggestion['text'], 'focus-' + identity), '',
+                   ' '.join(f'[{ref}](#{ref.lower()})' for ref in suggestion['refs']), '']
+        if interactive:
+            html.append('<div class="checkin-actions">' + ''.join(
+                f'<a href="noesis-focus://{action}/{identity}?day={delivery}">{label}</a>'
+                for action, label in [('done', '完成了'), ('missed', '还没完成'),
+                                      ('snoozed', '明天再提醒'), ('pause', '暂停此方向')]) + '</div>')
+            md += [f'反馈：`noesis focus checkin {identity} --outcome done`（也可用 missed / snoozed）。', '']
+        html.append('</article>')
+    if interactive:
+        html.append(f'<p><a href="noesis-focus://add?day={delivery}">＋ 设置关注方向</a></p>'
+                    '<p class="muted">按钮在 NOESIS 晨报窗口内使用。每次反馈只记录当天行动；长期方向会持续跟进，可随时暂停。最多启用 3 个方向。</p>')
+    html.append('</section>')
+    return '\n'.join(html), md
+
+
+def write_failure(config, delivery, error):
+    focus_html, _ = render_focus(due_focuses(config, local_day(config)), delivery=delivery)
+    path = config.root / 'briefings' / (delivery + '-error.html')
+    write_if_changed(path, '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
+        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">'
+        '<title>NOESIS 晨报</title><style>' + CSS + '</style><main>'
+        '<h1>晨报暂未生成</h1><p>请检查网络、API 余额或数据目录 .env 配置。</p>'
+        '<p>状态：' + escape(error) + '</p><p>稍后会按重试规则补生成。你的关注方向仍可在本机反馈。</p>'
+        + focus_html + '</main></html>')
+    return str(path)
+
+
+def refresh_focus(config):
+    """Refresh local views after a user action, without resetting delivery acknowledgement."""
+    day = local_day(config).isoformat()
+    target = config.root / 'briefings' / (day + '.json')
+    with file_lock(config.root / 'run/digest.lock'):
+        if target.exists():
+            write_briefing(config, json.loads(target.read_text()))
+            return str(target.with_suffix('.html'))
+        # Also gives settings/check-ins a usable view when the model is unavailable.
+        return write_failure(config, day, 'briefing_pending')
 
 
 def write_briefing(config, record):
@@ -49,13 +125,17 @@ def write_briefing(config, record):
     md = ['---', 'type: morning-briefing', 'date: ' + day,
           'source_date: ' + record['source_day'], 'model: ' + json.dumps(record['model']), '---',
           f'# {day} 晨报', '', export_markdown(result['summary'], 'summary'), '', metadata, '', caveat, '']
+    interactive = day == local_day(config).isoformat()
+    focuses = due_focuses(config, local_day(config)) if interactive else record.get('focuses', [])
+    focus_html, focus_md = render_focus(focuses, result.get('focus_advice', []), delivery=day if interactive else None)
+    md += focus_md
     html = ['<!doctype html><html lang="zh-CN"><meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width,initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">',
             f'<title>NOESIS 晨报 · {day}</title><style>{CSS}</style><main>',
             f'<header><div class="brand">NOESIS · 求是 / MORNING BRIEF</div><h1>{day}，从昨天继续。</h1>',
             f'<div class="markdown-body">{render_markdown(result["summary"], "summary")}</div>'
-            f'<div class="muted">{escape(metadata)}</div></header><div class="grid">']
+            f'<div class="muted">{escape(metadata)}</div></header>', focus_html, '<div class="grid">']
     for key in ('priorities', 'completed', 'progress', 'unfinished'):
         md += ['## ' + LABELS[key], '']
         html += [f'<section class="{"focus" if key == "priorities" else ""}"><h2>{LABELS[key]}</h2><ul>']
@@ -81,8 +161,7 @@ def write_briefing(config, record):
             lines = export_markdown(item['text'], f'{key}-{index}').split('\n')
             # Entities keep names literal, including Markdown and auto-link syntax.
             project_label = ' · '.join(labels)
-            project_label = ''.join(f'&#{ord(c)};' if c in '\\`*_{}[]<>()#+!|~&:' else c
-                                    for c in single_line(project_label))
+            project_label = literal_markdown(project_label)
             md.append('- **' + project_label + '**\n\n  ' + lines[0] + ''.join('\n  ' + line for line in lines[1:]) + '\n\n  '
                       + ' '.join(f'[{ref}](#{ref.lower()})' for ref in item['refs']))
         md.append('')

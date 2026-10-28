@@ -72,13 +72,8 @@ def morning_run(config, *, unlocked=False, unlock_event=False, now=None):
                 return {'status': 'ready', 'show': result['path'], 'delivery_day': delivery, 'failure': False}
             return {'status': 'already_presented' if state.get('presented_at') else 'ready_waiting_for_unlock', 'delivery_day': delivery}
         if unlocked and state.get('error') and not state.get('error_presented_at'):
-            error_path = config.root / 'briefings' / (delivery + '-error.html')
-            # Only fixed internal error codes reach this page; never provider error bodies.
-            from html import escape
-            atomic_write(error_path, '<!doctype html><meta charset="utf-8"><title>NOESIS 晨报</title>'
-                '<main style="max-width:700px;margin:70px auto;font:18px/1.8 -apple-system">'
-                '<h1>晨报暂未生成</h1><p>昨日原始日志已保存。请检查网络、API 余额或钥匙串访问权限。</p>'
-                f'<p>状态：{escape(state["error"])}</p><p>稍后会按重试规则补生成，成功后再次解锁即可查看。</p></main>')
+            from .render import write_failure
+            error_path = write_failure(config, delivery, state['error'])
             return {'status': 'failed', 'show': str(error_path), 'delivery_day': delivery, 'failure': True}
         return {'status': 'failed', 'error': state.get('error', 'retry_pending'), 'attempts': state['attempts']}
 

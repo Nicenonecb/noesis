@@ -76,6 +76,23 @@ def parser() -> argparse.ArgumentParser:
     audit=sub.add_parser('audit-redaction',help='仅报告脱敏命中位置，可修复并重建 Markdown')
     audit.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     audit.add_argument('--fix',action='store_true')
+    focus = sub.add_parser('focus', help='设置发展方向，记录每日行动与反馈')
+    focus.add_argument('--data-dir', type=Path, default=argparse.SUPPRESS)
+    focus_actions = focus.add_subparsers(dest='action', required=True)
+    focus_actions.add_parser('list')
+    for action in ('add', 'update', 'pause', 'resume', 'checkin'):
+        command = focus_actions.add_parser(action)
+        command.add_argument('--expected-day', help=argparse.SUPPRESS)
+        if action != 'add':
+            command.add_argument('id')
+        if action in {'add', 'update'}:
+            command.add_argument('--title', required=action == 'add')
+            command.add_argument('--direction', required=action == 'add')
+            command.add_argument('--step', required=action == 'add')
+        if action == 'checkin':
+            command.add_argument('--outcome', choices=['done', 'missed', 'snoozed'], required=True)
+            command.add_argument('--note', default='')
+            command.add_argument('--until', help='延后到 YYYY-MM-DD，默认明天')
     digest=sub.add_parser('digest',help='用 DeepSeek 生成指定完整日期的晨报')
     digest.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     digest.add_argument('--date',default='yesterday')
@@ -109,6 +126,19 @@ def main(argv: list[str] | None = None) -> int:
             print(redact(f"✅ 初始化完成：{config.root}（保留已有配置与数据）"))
             return 0
         config = load_config(args.data_dir)
+        if args.command == 'focus':
+            from .focus import change_focus, read_focuses
+            from .digest.render import refresh_focus
+            if args.action == 'list':
+                result = read_focuses(config)
+            else:
+                fields = {key: getattr(args, key) for key in ('title', 'direction', 'step', 'outcome', 'note', 'until', 'expected_day')
+                          if hasattr(args, key)}
+                result = change_focus(config, args.action, identity=getattr(args, 'id', None), **fields)
+                # No model request: refresh today's local reminder after feedback.
+                result['path'] = refresh_focus(config)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
         if args.command in {'digest','digest-key','digest-check','morning-run','morning-ack'}:
             from datetime import date,datetime
             from .digest import client

@@ -337,11 +337,53 @@ def test_client_json_mode_and_truncation_rejection(monkeypatch, config):
         assert env_file == config.root / '.env'
         assert body['model'] == 'deepseek-flash'
         assert body['response_format'] == {'type': 'json_object'}
-        assert 'tools' not in body and body['thinking']['type'] == 'disabled'
+        assert 'tools' not in body and body['thinking']['type'] == 'enabled'
+        assert body['reasoning_effort'] == 'high' and 'temperature' not in body
         return {'choices': [{'finish_reason': 'length', 'message': {'content': '{}'}}]}
     monkeypatch.setattr(client, 'request', respond)
     with pytest.raises(client.DigestError, match='incomplete_generation'):
         client.complete(config.values['digest'], 'json', {}, env_file=config.root / '.env')
+
+
+@pytest.mark.parametrize('effort', ['low', 'high', 'max'])
+def test_thinking_request_keeps_only_final_json(monkeypatch, config, effort):
+    config.values['digest']['reasoning_effort'] = effort
+    def respond(path, *, body, timeout, env_file=None):
+        assert path == '/chat/completions'
+        assert body['thinking'] == {'type': 'enabled'}
+        assert body['reasoning_effort'] == effort
+        assert body['max_tokens'] == 32768 and timeout == 180
+        assert body['response_format'] == {'type': 'json_object'}
+        assert 'temperature' not in body and 'tools' not in body
+        return {'choices': [{'finish_reason': 'stop', 'message': {
+            'content': '{"summary":"合成结果"}', 'reasoning_content': 'synthetic-private-reasoning'}}],
+            'usage': {'total_tokens': 100, 'completion_tokens_details': {'reasoning_tokens': 70}},
+            'model': 'deepseek-flash'}
+    monkeypatch.setattr(client, 'request', respond)
+    result, usage, model = client.complete(config.values['digest'], 'JSON', {}, env_file=config.root / '.env')
+    assert result == {'summary': '合成结果'} and usage == {'total_tokens': 100}
+    assert model == 'deepseek-flash'
+    assert 'synthetic-private-reasoning' not in json.dumps((result, usage))
+
+
+def test_old_config_inherits_effort_but_preserves_explicit_limits(config):
+    path = config.root / 'config.toml'
+    path.write_text(path.read_text().replace('reasoning_effort = "high"\n', '')
+                    .replace('max_tokens = 32768', 'max_tokens = 6000')
+                    .replace('request_timeout = 180', 'request_timeout = 90'))
+    settings = load_config(config.root).values['digest']
+    assert settings['reasoning_effort'] == 'high'
+    assert settings['max_tokens'] == 6000 and settings['request_timeout'] == 90
+
+
+@pytest.mark.parametrize('field,value', [('reasoning_effort', '"invalid"'),
+                                       ('reasoning_effort', 'true'), ('max_tokens', '393217')])
+def test_invalid_thinking_configuration_is_rejected(config, field, value):
+    path = config.root / 'config.toml'
+    import re
+    path.write_text(re.sub(rf'(?m)^{field} = .*$', f'{field} = {value}', path.read_text()))
+    with pytest.raises(ConfigError):
+        load_config(config.root)
 
 
 def test_ai_install_schedule_and_uninstall_keep_key_and_reports(config, tmp_path, monkeypatch):

@@ -204,6 +204,7 @@ def generate(config, day, *, force=False):
             'source_day': day.isoformat(), 'delivery_day': delivery,
             'generated_at': datetime.now(config.timezone).isoformat(),
             'model': config.values['digest']['model'], 'response_model': response_model,
+            'reasoning_effort': config.values['digest']['reasoning_effort'] if mode == 'model' else None,
             'usage': usage, 'source_health': health, 'source_counts': payload['source_counts'],
             'omitted_events': payload['omitted_events'], 'evidence': payload['evidence'],
             'focuses': payload['focuses'], 'result': result})

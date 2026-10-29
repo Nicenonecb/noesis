@@ -108,7 +108,7 @@ def complete(settings, system, payload, *, env_file=None):
         'model': settings['model'], 'messages': [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}],
-        'thinking': {'type': 'disabled'}, 'temperature': 0.2,
+        'thinking': {'type': 'enabled'}, 'reasoning_effort': settings['reasoning_effort'],
         'response_format': {'type': 'json_object'}, 'max_tokens': settings['max_tokens'], 'stream': False}, env_file=env_file)
     try:
         choice = response['choices'][0]

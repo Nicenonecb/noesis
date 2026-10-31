@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "noesis"
-version = "0.1.0"
+version = "0.2.0"
 description = "NOESIS · 求是 — 从实事中求是，让每一次循环都进到高一级"
 requires-python = ">=3.11"
 dependencies = []

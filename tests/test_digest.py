@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from noesis.config import initialize, load_config, ConfigError
+from noesis import __version__
 from noesis.db import Database
 from noesis.models import Event
 from noesis.digest import client
@@ -417,7 +418,7 @@ def test_installed_runtime_does_not_need_the_desktop_checkout(config, tmp_path):
     result = subprocess.run([str(config.root / 'bin/noesis'), '--version'],
                             cwd=tmp_path, capture_output=True, text=True, check=True,
                             env={'PATH':'/usr/bin:/bin', 'PYTHONPATH':'/does/not/exist'})
-    assert result.stdout.strip() == '0.1.0'
+    assert result.stdout.strip() == __version__
     # Exercise the packaged Markdown parser, not only the CLI --version path.
     day = date(2026, 10, 22)
     generated = generate(config, day)

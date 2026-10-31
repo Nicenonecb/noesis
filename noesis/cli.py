@@ -75,6 +75,14 @@ def parser() -> argparse.ArgumentParser:
     organize.add_argument('id')
     organize.add_argument('--force',action='store_true',help='忽略已有整理结果，重新调用模型')
     organize.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    ask=sub.add_parser('ask',help='用自然语言询问本地档案，回答带证据引用')
+    ask.add_argument('question')
+    ask.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    ask.add_argument('--days',type=int,help='只检索最近 N 天')
+    ask.add_argument('--source',action='append',choices=['claude_code','codex','git','browser_history','capture'])
+    ask.add_argument('--project',action='append',help='只检索指定项目，可重复')
+    ask.add_argument('--limit',type=int,help='最多使用多少条证据')
+    ask.add_argument('--json',action='store_true',help='输出完整 JSON，包含证据原文')
     for command in ('build-daily','daily-run'):
         daily=sub.add_parser(command,help='生成每日 Markdown；daily-run 先采集')
         daily.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
@@ -212,6 +220,26 @@ def main(argv: list[str] | None = None) -> int:
             result=organize_capture(config,args.id,force=args.force)
             print(json.dumps(result,ensure_ascii=False))
             return 0 if result['status'] in {'done','cached'} else 1
+        if args.command=='ask':
+            from .ask import ask
+            from .digest import client
+            try:
+                result=ask(config,args.question,days=args.days,sources=args.source,projects=args.project,limit=args.limit)
+            except client.DigestError as exc:
+                print(json.dumps({'status':'failed','error':str(exc)},ensure_ascii=False))
+                return 1
+            if args.json:
+                print(json.dumps(result,ensure_ascii=False))
+            else:
+                print(result['answer'])
+                if result['evidence']:
+                    labels={'claude_code':'Claude Code','codex':'Codex','git':'Git','browser_history':'浏览','capture':'收藏'}
+                    print('\n依据：')
+                    for item in result['evidence']:
+                        if item['id'] in result['citations']:
+                            project=f" · {item['project']}" if item['project'] else ''
+                            print(f"- [{item['id']}] {item['time']} · {labels.get(item['source'],item['source'])}{project} · {item['title']}")
+            return 0
         if args.command in {'repos','reproject'}:
             from .db import Database
             from . import queries
@@ -270,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"❌ {exc}", file=sys.stderr)
     except (OSError, sqlite3.Error, ValueError) as exc:
-        if config is not None and args.command in {'capture','capture-ocr','annotate','import-inbox','organize'}:
+        if config is not None and args.command in {'capture','capture-ocr','annotate','import-inbox','organize','ask'}:
             import traceback
             frames=';'.join(f'{Path(frame.filename).name}:{frame.lineno}:{frame.name}' for frame in traceback.extract_tb(exc.__traceback__))
             try:

@@ -73,6 +73,14 @@ max_tokens = 4096
 request_timeout = 90
 max_tags = 6
 
+[ask]
+model = "deepseek-flash"
+reasoning_effort = "low"
+max_input_chars = 30000
+max_evidence = 12
+max_tokens = 8192
+request_timeout = 120
+
 [digest]
 enabled = false
 model = "deepseek-flash"
@@ -197,6 +205,19 @@ def load_config(override: str | Path | None = None) -> Config:
         raise ConfigError('organize.request_timeout 范围：10–600 秒。')
     if not 1 <= organize['max_tags'] <= 8:
         raise ConfigError('organize.max_tags 范围：1–8。')
+    ask = values['ask']
+    if ask['model'] != 'deepseek-flash':
+        raise ConfigError('当前档案问答仅接入 DeepSeek deepseek-flash。')
+    if ask['reasoning_effort'] not in {'low', 'high', 'max'}:
+        raise ConfigError('ask.reasoning_effort 必须是 low、high 或 max。')
+    if not 4000 <= ask['max_input_chars'] <= 100000:
+        raise ConfigError('ask.max_input_chars 范围：4000–100000。')
+    if not 1 <= ask['max_evidence'] <= 20:
+        raise ConfigError('ask.max_evidence 范围：1–20。')
+    if not 256 <= ask['max_tokens'] <= 32768:
+        raise ConfigError('ask.max_tokens 范围：256–32768。')
+    if not 10 <= ask['request_timeout'] <= 600:
+        raise ConfigError('ask.request_timeout 范围：10–600 秒。')
     if len(values['capture']['watch_dirs']) > 8:
         raise ConfigError('capture.watch_dirs 最多 8 个目录。')
     try:

@@ -37,14 +37,15 @@ def screenshot(path, *, window_id=None, region=False):
     path.chmod(0o600)
 
 
-def new_capture(config):
+def new_capture(config, suffix='.png'):
     """Reserve a private image path; the caller fills or replaces the empty file."""
     now=datetime.now(config.timezone)
     directory=config.root/'captures'/now.strftime('%Y-%m')
     private_directory(directory)
+    suffix=suffix if suffix.startswith('.') else '.'+suffix
     while True:
         identity=now.strftime('%Y%m%d-%H%M%S-')+secrets.token_hex(2)
-        image=directory/(identity+'.png')
+        image=directory/(identity+suffix)
         try:
             fd=os.open(image,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)
             return identity,image

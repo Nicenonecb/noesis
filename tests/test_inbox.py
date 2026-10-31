@@ -82,3 +82,15 @@ def test_cli_import_inbox(tmp_path, monkeypatch, capsys):
     assert main(['import-inbox', '--data-dir', str(config.root), '--wait', '0']) == 0
     output = json.loads(capsys.readouterr().out)
     assert len(output['imported']) == 1 and output['directories'] == 1
+
+
+def test_import_keeps_the_original_image_suffix(tmp_path, monkeypatch):
+    config = make_config(tmp_path, monkeypatch)
+    source = tmp_path / 'photo.webp'
+    source.write_bytes(b'RIFF....WEBP')
+    result = import_screenshot(config, source, background=False)
+    with Database(config.db_path) as db:
+        event = queries.capture_by_id(db.connection, result['id'])
+    assert event.meta['screenshot'].endswith('.webp')
+    markdown = (config.root / event.meta['screenshot']).with_suffix('.md').read_text()
+    assert '![[captures/' in markdown and '.webp]]' in markdown

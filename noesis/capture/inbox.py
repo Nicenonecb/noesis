@@ -48,7 +48,7 @@ def import_screenshot(config, source, *, move=True, background=True):
         existing = queries.capture_by_hash(db.connection, digest)
         if existing:
             return {'status': 'duplicate', 'id': existing}
-        identity, destination = new_capture(config)
+        identity, destination = new_capture(config, source.suffix.lower())
         try:
             shutil.copyfile(source, destination)
             destination.chmod(0o600)

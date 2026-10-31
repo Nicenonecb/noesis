@@ -135,6 +135,11 @@ def capture_by_id(conn, identity):
     return _event(row) if row else None
 
 
+def capture_by_hash(conn, digest):
+    row=conn.execute("SELECT source_id FROM events WHERE source='capture' AND json_extract(meta,'$.content_hash')=? LIMIT 1",(digest,)).fetchone()
+    return row[0] if row else None
+
+
 def _snippet(event, q):
     for text in (event.title or "", event.content, event.url or ""):
         match = re.search(re.escape(q), text, re.IGNORECASE)

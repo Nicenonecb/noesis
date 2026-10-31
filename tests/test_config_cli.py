@@ -70,3 +70,27 @@ def test_cli_data_dir_before_or_after_command_and_env(tmp_path, monkeypatch, cap
     assert (tmp_path / "env-data/config.toml").exists()
     assert main(["doctor", "--data-dir", str(tmp_path / "missing")]) == 2
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_inbox_and_organize_defaults_and_validation(tmp_path):
+    config = initialize(tmp_path / "data")
+    assert config.watch_dirs == [(config.root / "inbox").resolve()]
+    assert (config.root / "inbox").is_dir()
+    assert config.values["organize"]["enabled"] is False
+    path = config.root / "config.toml"
+    assert path.exists()
+
+
+@pytest.mark.parametrize("old,new", [
+    ('max_tags = 6', 'max_tags = 0'),
+    ('reasoning_effort = "low"', 'reasoning_effort = "x"'),
+    ('watch_dirs = ["inbox"]', 'watch_dirs = ["inbox", 1]'),
+    ('[organize]\nenabled = false', '[organize]\nenabled = "yes"'),
+])
+def test_inbox_and_organize_config_validation(tmp_path, old, new):
+    root = tmp_path / "data"
+    initialize(root)
+    path = root / "config.toml"
+    path.write_text(path.read_text().replace(old, new, 1))
+    with pytest.raises(ConfigError):
+        load_config(root)

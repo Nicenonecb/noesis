@@ -67,6 +67,14 @@ def parser() -> argparse.ArgumentParser:
         child.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
         if command=='annotate':
             child.add_argument('--note',required=True)
+    inbox=sub.add_parser('import-inbox',help='导入收件箱目录里已经保存的截图')
+    inbox.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
+    inbox.add_argument('--wait',type=float,default=1.0,help='启动后等待文件写完的秒数')
+    inbox.add_argument('--limit',type=int,default=50,help='本次最多导入的数量')
+    organize=sub.add_parser('organize',help='让 AI 整理收藏的标题、摘要与标签')
+    organize.add_argument('id')
+    organize.add_argument('--force',action='store_true',help='忽略已有整理结果，重新调用模型')
+    organize.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     for command in ('build-daily','daily-run'):
         daily=sub.add_parser(command,help='生成每日 Markdown；daily-run 先采集')
         daily.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
@@ -193,6 +201,17 @@ def main(argv: list[str] | None = None) -> int:
                 result=annotate(config,args.id,args.note)
             print(json.dumps(result,ensure_ascii=False))
             return 0
+        if args.command=='import-inbox':
+            from .capture.inbox import run_inbox
+            if args.wait<0 or args.limit<1:
+                raise ValueError('wait 不能为负，limit 必须大于零。')
+            print(json.dumps(run_inbox(config,wait=args.wait,limit=args.limit),ensure_ascii=False))
+            return 0
+        if args.command=='organize':
+            from .organize import organize_capture
+            result=organize_capture(config,args.id,force=args.force)
+            print(json.dumps(result,ensure_ascii=False))
+            return 0 if result['status'] in {'done','cached'} else 1
         if args.command in {'repos','reproject'}:
             from .db import Database
             from . import queries
@@ -251,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"❌ {exc}", file=sys.stderr)
     except (OSError, sqlite3.Error, ValueError) as exc:
-        if config is not None and args.command in {'capture','capture-ocr','annotate'}:
+        if config is not None and args.command in {'capture','capture-ocr','annotate','import-inbox','organize'}:
             import traceback
             frames=';'.join(f'{Path(frame.filename).name}:{frame.lineno}:{frame.name}' for frame in traceback.extract_tb(exc.__traceback__))
             try:

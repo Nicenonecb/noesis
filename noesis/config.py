@@ -61,6 +61,17 @@ discover_from_sessions = true
 [capture]
 hotkey = "alt+cmd+s"
 ask_note = true
+watch_dirs = ["inbox"]
+auto_import = false
+
+[organize]
+enabled = false
+model = "deepseek-flash"
+reasoning_effort = "low"
+max_input_chars = 12000
+max_tokens = 4096
+request_timeout = 90
+max_tags = 6
 
 [digest]
 enabled = false
@@ -106,6 +117,15 @@ class Config:
 
     def source_path(self, section: str, key: str) -> Path:
         return Path(self.values[section][key]).expanduser()
+
+    @property
+    def watch_dirs(self) -> list[Path]:
+        """Relative entries resolve inside the data directory (default: inbox/)."""
+        result = []
+        for raw in self.values['capture']['watch_dirs']:
+            path = Path(raw).expanduser()
+            result.append((path if path.is_absolute() else self.root / path).resolve())
+        return result
 
 
 def default_config(root: Path) -> str:
@@ -164,6 +184,21 @@ def load_config(override: str | Path | None = None) -> Config:
         raise ConfigError('digest.max_tokens 不能超过 393216。')
     if not 8000 <= values['digest']['max_input_chars'] <= 200000 or not 1 <= values['digest']['max_events'] <= 1000:
         raise ConfigError('晨报输入范围：8000–200000 字符、1–1000 条事件。')
+    organize = values['organize']
+    if organize['model'] != 'deepseek-flash':
+        raise ConfigError('当前整理功能仅接入 DeepSeek deepseek-flash。')
+    if organize['reasoning_effort'] not in {'low', 'high', 'max'}:
+        raise ConfigError('organize.reasoning_effort 必须是 low、high 或 max。')
+    if not 2000 <= organize['max_input_chars'] <= 60000:
+        raise ConfigError('organize.max_input_chars 范围：2000–60000。')
+    if not 256 <= organize['max_tokens'] <= 32768:
+        raise ConfigError('organize.max_tokens 范围：256–32768。')
+    if not 10 <= organize['request_timeout'] <= 600:
+        raise ConfigError('organize.request_timeout 范围：10–600 秒。')
+    if not 1 <= organize['max_tags'] <= 8:
+        raise ConfigError('organize.max_tags 范围：1–8。')
+    if len(values['capture']['watch_dirs']) > 8:
+        raise ConfigError('capture.watch_dirs 最多 8 个目录。')
     try:
         for pattern in values['browser']['blacklist_url_regex']:
             re.compile(pattern)
@@ -196,7 +231,7 @@ def initialize(override: str | Path | None = None) -> Config:
     private_directory(root)
     write_template(root / "config.toml", default_config(root))
     config = load_config(root)
-    for name in ("db", "daily", "captures", "briefings", "logs", "bin", "run"):
+    for name in ("db", "daily", "captures", "briefings", "logs", "bin", "run", "inbox"):
         private_directory(root / name)
     write_template(root / "goals.yaml", GOALS_TEMPLATE)
     with Database(config.db_path):

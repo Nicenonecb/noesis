@@ -18,6 +18,7 @@ from .files import atomic_write
 
 LABELS=('com.justin.noesis.collect','com.justin.noesis.daily')
 MORNING_LABEL='com.justin.noesis.morning'
+INBOX_LABEL='com.justin.noesis.inbox'
 BEGIN='-- BEGIN NOESIS'
 END='-- END NOESIS'
 
@@ -26,15 +27,28 @@ def launchctl(*arguments,check=True):
     return subprocess.run(['launchctl',*arguments],capture_output=True,text=True,check=check,timeout=20)
 
 
+def runtime_args(config,command,*extra):
+    return [str(Path(sys.executable).resolve()),'-I',str(config.root/'bin/noesis.pyz'),command,
+            '--data-dir',str(config.root),*extra]
+
+
 def plist(config,project,label):
     if label==MORNING_LABEL:
         return {'Label':label,'ProgramArguments':[str(morning_app(config)/'Contents/MacOS/NOESISMorning')],
                 'RunAtLoad':True,'KeepAlive':{'SuccessfulExit':False},'ThrottleInterval':30,
                 'StandardOutPath':str(config.root/'logs/launchd-morning.log'),
                 'StandardErrorPath':str(config.root/'logs/launchd-morning-error.log')}
+    if label==INBOX_LABEL:
+        return {'Label':label,'ProgramArguments':runtime_args(config,'import-inbox'),
+                'WorkingDirectory':str(config.root),
+                'EnvironmentVariables':{'PATH':'/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'},
+                'WatchPaths':[str(path) for path in config.watch_dirs],
+                'StartInterval':300,'RunAtLoad':True,
+                'StandardOutPath':str(config.root/'logs/launchd-inbox.log'),
+                'StandardErrorPath':str(config.root/'logs/launchd-inbox-error.log')}
     ai=config.values['digest']['enabled']
     command='collect' if label.endswith('collect') else 'morning-run' if ai else 'daily-run'
-    args=[str(Path(sys.executable).resolve()),'-I',str(config.root/'bin/noesis.pyz'),command,'--data-dir',str(config.root)]
+    args=runtime_args(config,command)
     if command=='daily-run':args+=['--catch-up','7']
     result={'Label':label,'ProgramArguments':args,'WorkingDirectory':str(config.root),
             'EnvironmentVariables':{'PATH':'/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'},
@@ -52,8 +66,13 @@ def morning_app(config):
     return config.root/'bin/NOESIS Morning.app'
 
 
+def inbox_enabled(config):
+    return bool(config.values['capture']['auto_import'] and config.watch_dirs)
+
+
 def managed_labels(config):
-    return (*LABELS,MORNING_LABEL) if config.values['digest']['enabled'] else LABELS
+    labels=(*LABELS,MORNING_LABEL) if config.values['digest']['enabled'] else LABELS
+    return (*labels,INBOX_LABEL) if inbox_enabled(config) else labels
 
 
 def install_runtime(config,project):
@@ -121,7 +140,7 @@ def install(config,project,*,load=True):
     project=project.resolve()
     domain=f'gui/{os.getuid()}'
     if load:
-        for label in (*LABELS,MORNING_LABEL):
+        for label in (*LABELS,MORNING_LABEL,INBOX_LABEL):
             launchctl('bootout',domain+'/'+label,check=False)
     install_runtime(config,project)
     subprocess.run(['swiftc','-O',str(project/'noesis/capture/ocr/ocr.swift'),'-o',str(config.root/'bin/noesis-ocr')],
@@ -131,6 +150,10 @@ def install(config,project,*,load=True):
     agents=Path.home()/'Library/LaunchAgents';private_directory(agents)
     if not config.values['digest']['enabled']:
         (agents/(MORNING_LABEL+'.plist')).unlink(missing_ok=True)
+    for directory in config.watch_dirs:
+        private_directory(directory)
+    if not inbox_enabled(config):
+        (agents/(INBOX_LABEL+'.plist')).unlink(missing_ok=True)
     for label in managed_labels(config):
         data=plist(config,project,label)
         for key in ('StandardOutPath','StandardErrorPath'):
@@ -144,7 +167,7 @@ def install(config,project,*,load=True):
 
 def uninstall(config,*,load=True):
     domain=f'gui/{os.getuid()}'
-    for label in (*LABELS,MORNING_LABEL):
+    for label in (*LABELS,MORNING_LABEL,INBOX_LABEL):
         if load:launchctl('bootout',domain+'/'+label,check=False)
         (Path.home()/'Library/LaunchAgents'/(label+'.plist')).unlink(missing_ok=True)
     directory=Path.home()/'.hammerspoon';link=directory/'noesis.lua'

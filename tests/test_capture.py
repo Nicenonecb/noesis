@@ -104,3 +104,15 @@ def test_native_vision_ocr(tmp_path):
     data=json.loads(result.stdout)
     assert 'NOESIS' in data['text'] and '中文识别' in data['text']
     assert all(len(line['bbox'])==4 for line in data['lines']) and not data['uniform']
+
+
+def test_enrichment_command_uses_running_bundle(tmp_path,monkeypatch):
+    import sys
+    from noesis.capture.capture import enrichment_command
+    config=initialize(tmp_path/'data')
+    bundle=tmp_path/'noesis.pyz';bundle.write_bytes(b'zip')
+    monkeypatch.setattr(sys,'argv',[str(bundle)])
+    command=enrichment_command(config,'20261101-010203-abcd')
+    assert command[:3]==[sys.executable,'-I',str(bundle)] and 'capture-ocr' in command
+    monkeypatch.setattr(sys,'argv',['/usr/bin/pytest'])
+    assert enrichment_command(config,'20261101-010203-abcd')[1:3]==['-m','noesis']

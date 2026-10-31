@@ -58,7 +58,10 @@ def render_day(conn, day, tz):
         lines.append(f'- {single_line(item.project)}：约 {item.minutes//60}h {item.minutes%60}m')
     lines+=['','## ⭐ 手动收藏','']
     for event in (e for e in events if e.source=='capture'):
-        lines.append(f'- {local_time(event,tz)} {capture_link(event)}')
+        line=f'- {local_time(event,tz)} {capture_link(event)}'
+        if event.meta.get('tags'):
+            line+=' '+' '.join('#'+tag for tag in event.meta['tags'])
+        lines.append(line)
         if event.url:lines.append('  '+event.url)
         if event.meta.get('note'):lines.append('  备注：'+excerpt(event.meta['note'],300))
         if event.content:lines.append('  摘录：'+excerpt(event.content,300))

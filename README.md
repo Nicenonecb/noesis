@@ -116,6 +116,33 @@ noesis annotate <收藏ID> --note "备注"
 浏览器还需开启“允许 Apple 事件中的 JavaScript”。未安装 Hammerspoon 时，命令行仍可使用。
 Safari 历史采集需要完全磁盘访问权限，可用 `noesis doctor` 检查实际运行路径和授权情况。
 
+## 自动收件箱
+
+不想每次都按快捷键时，可以让系统截图直接落进 NOESIS：
+
+1. 按 `⇧⌘5` → 选项 → 存储到 → 其他位置，选择 `~/NOESIS/inbox`（只需设置一次）。
+2. 在 `config.toml` 的 `[capture]` 中设置 `auto_import = true`。
+3. 运行 `scripts/install.sh`，安装或更新 `com.justin.noesis.inbox` 后台任务。
+
+之后 `⇧⌘4` / `⇧⌘5` 保存的截图会在文件写完后自动入库、OCR，并按内容哈希去重；
+也可以手动运行 `noesis import-inbox`。`watch_dirs` 支持多个目录，相对路径位于数据目录内，
+默认 `["inbox"]`。导入失败的文件会留在原目录；重复文件不会产生第二条记录。
+
+## AI 整理
+
+在 `config.toml` 的 `[organize]` 中设置 `enabled = true` 后，每张收藏会在 OCR 完成后调用一次
+官方 DeepSeek 接口，生成标题、摘要、标签和分类，写入收藏 Markdown 与日报。只发送脱敏后的文字
+（标题、网址、备注、OCR/网页正文），不发送截图图片；失败时保留原收藏并标记，不影响入库。
+该功能默认关闭，`reasoning_effort` 默认 `low`、`max_input_chars` 默认 12000，用于控制费用。
+`project` 只作为建议展示，不会自动改写项目归属。标签可在 Obsidian 中按 tag 浏览，
+日报会在收藏行显示 `#标签`。
+
+```sh
+noesis import-inbox
+noesis organize <收藏ID>
+noesis organize <收藏ID> --force   # 重新调用模型
+```
+
 ## 后台集成
 
 ```sh
@@ -141,6 +168,8 @@ scripts/uninstall.sh
 - 对话记录保留来源信息，排除工具结果、系统注入和推理内容；过长文本按配置截断。
 - Git 只采集配置及本机 Git 邮箱集合的提交，不保存 diff。
 - 浏览器历史通过临时数据库副本读取；普通历史不保存网页正文，主动收藏才提取正文。
+- 自动收件箱会导入监听目录中的全部图片；请只把截图保存位置指向该目录，或关闭 `auto_import`。
+- AI 整理只把脱敏后的文字发送到官方 DeepSeek 接口，不发送截图图片；该功能默认关闭。
 - 敏感文本在入库前按模式脱敏，但不能识别所有自由文本秘密，也不会处理截图像素。
 - 日志和收藏 Markdown 是生成文件，手工修改可能在重建时被覆盖；独立笔记应另存。
 - 项目时长根据事件间隔估算，不代表精确工时。

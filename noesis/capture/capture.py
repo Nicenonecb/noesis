@@ -37,7 +37,8 @@ def screenshot(path, *, window_id=None, region=False):
     path.chmod(0o600)
 
 
-def create_capture(config, *, window_id=None, app='', app_name='', window_title='', region=False, background=True):
+def new_capture(config):
+    """Reserve a private image path; the caller fills or replaces the empty file."""
     now=datetime.now(config.timezone)
     directory=config.root/'captures'/now.strftime('%Y-%m')
     private_directory(directory)
@@ -46,9 +47,26 @@ def create_capture(config, *, window_id=None, app='', app_name='', window_title=
         image=directory/(identity+'.png')
         try:
             fd=os.open(image,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)
-            break
+            return identity,image
         except FileExistsError:
             continue
+
+
+def enrichment_command(config, identity):
+    entry=Path(sys.argv[0]).resolve()
+    if entry.suffix=='.pyz' and entry.is_file():
+        return [sys.executable,'-I',str(entry),'capture-ocr',identity,'--data-dir',str(config.root)]
+    return [sys.executable,'-m','noesis','capture-ocr',identity,'--data-dir',str(config.root)]
+
+
+def start_enrichment(config, identity):
+    subprocess.Popen(enrichment_command(config,identity),
+                     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                     start_new_session=True,close_fds=True)
+
+
+def create_capture(config, *, window_id=None, app='', app_name='', window_title='', region=False, background=True):
+    identity,image=new_capture(config)
     try:
         screenshot(image,window_id=window_id,region=region)
     except OSError:
@@ -69,9 +87,7 @@ def create_capture(config, *, window_id=None, app='', app_name='', window_title=
         db.insert_event(event)
     render_capture(config,identity)
     if background:
-        subprocess.Popen([sys.executable,'-m','noesis','capture-ocr',identity,'--data-dir',str(config.root)],
-                         stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-                         start_new_session=True,close_fds=True)
+        start_enrichment(config,identity)
     return {'id':identity,'title':redact(title),'warning':info.get('page_text_error')}
 
 
@@ -106,6 +122,7 @@ def enrich_capture(config, identity):
         raise ValueError('收藏不存在。')
     if event.meta.get('ocr_status')=='done':
         render_capture(config,identity)
+        _organize_if_enabled(config,identity)
         return {'id':identity,'status':'done'}
     image=config.root/event.meta['screenshot']
     maximum=config.values['browser']['max_page_chars']
@@ -147,7 +164,15 @@ def enrich_capture(config, identity):
     from ..runtime import run_logger
     with run_logger(config) as logger:
         logger.info('capture=%s ocr=%s page=%s',identity,status,warning or 'ok')
+    _organize_if_enabled(config,identity)
     return {'id':identity,'status':status,'warning':patch.get('page_text_error') or patch.get('screenshot_warning')}
+
+
+def _organize_if_enabled(config, identity):
+    if not config.values['organize']['enabled']:
+        return
+    from ..organize import organize_capture
+    organize_capture(config, identity)
 
 
 def annotate(config, identity, note):

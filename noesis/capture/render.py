@@ -25,11 +25,23 @@ def render_capture(config, identity):
         meta=event.meta
         path=config.root/Path(meta['screenshot']).with_suffix('.md')
         lines=['---','type: capture','id: '+json.dumps(identity),'title: '+json.dumps(event.title,ensure_ascii=False),
-               'time: '+json.dumps(event.ts),'---',f'# {single_line(event.title)}','',
+               'time: '+json.dumps(event.ts)]
+        if meta.get('tags'):
+            lines.append('tags: '+json.dumps(meta['tags'],ensure_ascii=False))
+        if meta.get('category'):
+            lines.append('category: '+json.dumps(meta['category'],ensure_ascii=False))
+        lines.extend(['---',f'# {single_line(event.title)}','',
                f"时间：{datetime.fromisoformat(event.ts).astimezone(config.timezone).isoformat()}",
-               f"应用：{single_line(meta.get('app_name') or meta.get('app_bundle'))}",'']
+               f"应用：{single_line(meta.get('app_name') or meta.get('app_bundle'))}",''])
         if event.url:
             lines.extend([f'网址：<{event.url}>',''])
+        if meta.get('tags'):
+            lines.extend(['标签：'+' '.join('#'+tag for tag in meta['tags']),''])
+        if meta.get('category'):
+            lines.extend([f"分类：{single_line(meta['category'])}",''])
+        summary=(meta.get('ai') or {}).get('summary')
+        if summary:
+            lines.extend(['## AI 摘要','',single_line(summary),''])
         lines.extend(['## 备注','',meta.get('note','').replace('```','ʼʼʼ'),'','## 截图','',f"![[{meta['screenshot']}]]",''])
         for section in meta.get('text_sections',[]):
             lines.extend(['## '+section['name'],'',event.content[section['start']:section['end']].replace('```','ʼʼʼ'),''])

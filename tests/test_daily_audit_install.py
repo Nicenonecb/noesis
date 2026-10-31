@@ -10,7 +10,7 @@ from noesis.db import Database
 from noesis.models import Event
 from noesis.render.daily import render_day,build_daily
 from noesis.audit import audit_redaction
-from noesis.install import install,uninstall,LABELS
+from noesis.install import install,uninstall,LABELS,INBOX_LABEL
 
 
 def fixture_events():
@@ -81,6 +81,24 @@ def test_installer_is_idempotent_and_uninstall_preserves_data(tmp_path,monkeypat
     assert config.db_path.exists() and 'custom = true' in (hs/'init.lua').read_text()
     assert not (hs/'noesis.lua').exists()
     uninstall(config,load=False)
+
+
+def test_inbox_plist_tracks_watch_dirs_and_is_removed(tmp_path,monkeypatch):
+    import plistlib
+    home=tmp_path/'home';home.mkdir()
+    monkeypatch.setattr(Path,'home',classmethod(lambda cls:home))
+    config=initialize(tmp_path/'data')
+    config.values['capture']['auto_import']=True
+    project=Path(__file__).resolve().parents[1]
+    monkeypatch.setattr('noesis.install.subprocess.run',lambda *args,**kw:SimpleNamespace(returncode=0,stdout=''))
+    install(config,project,load=False)
+    target=home/'Library/LaunchAgents'/f'{INBOX_LABEL}.plist'
+    data=plistlib.loads(target.read_bytes())
+    assert data['ProgramArguments'][3]=='import-inbox'
+    assert data['WatchPaths']==[str(config.root/'inbox')]
+    assert data['StartInterval']==300 and data['RunAtLoad'] is True
+    uninstall(config,load=False)
+    assert not target.exists()
 
 
 def test_end_to_end_all_text_sources_redact_before_daily(tmp_path,monkeypatch):

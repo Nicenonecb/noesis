@@ -170,7 +170,7 @@ def write_briefing(config, record):
     md += ['## 来源摘录', '']
     for item in record['evidence']:
         timestamp = datetime.fromisoformat(item['time']).astimezone(config.timezone).strftime('%Y-%m-%d %H:%M')
-        source = {'codex': 'Codex', 'claude_code': 'Claude Code', 'browser_history': '浏览历史', 'git': 'Git', 'capture': '收藏'}.get(item['source'], item['source'])
+        source = {'codex': 'Codex', 'claude_code': 'Claude Code', 'dsh': 'DSH', 'browser_history': '浏览历史', 'git': 'Git', 'capture': '收藏'}.get(item['source'], item['source'])
         label = ' · '.join(str(value) for value in (source, item.get('project'), timestamp) if value)
         title = unescape(item['title']).strip()
         text = item['text'].strip('\r\n')

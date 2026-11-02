@@ -18,6 +18,7 @@ data_dir = __DATA_DIR__
 [sources]
 claude_code = true
 codex = true
+dsh = true
 browser_history = true
 git = true
 
@@ -32,6 +33,10 @@ sessions_root = "~/.codex/sessions"
 history_file = "~/.codex/history.jsonl"
 max_assistant_chars = 4000
 injected_prefixes = ["<environment_context>", "<user_instructions>", "# AGENTS.md instructions", "<permissions instructions>"]
+
+[dsh]
+root = "~/.dsh/sessions"
+max_assistant_chars = 4000
 
 [browser]
 enabled = ["chrome", "arc", "safari"]
@@ -204,7 +209,7 @@ def load_config(override: str | Path | None = None) -> Config:
             re.compile(pattern)
     except re.error:
         raise ConfigError('browser.blacklist_url_regex 不是有效正则。') from None
-    for section, keys in {"claude_code": ["root"], "codex": ["sessions_root", "history_file"]}.items():
+    for section, keys in {"claude_code": ["root"], "codex": ["sessions_root", "history_file"], "dsh": ["root"]}.items():
         for key in keys:
             if not Path(values[section][key]).expanduser().is_absolute():
                 raise ConfigError(f"{section}.{key} 必须是绝对路径或 ~/ 路径。")

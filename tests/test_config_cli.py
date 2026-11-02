@@ -77,6 +77,8 @@ def test_inbox_and_organize_defaults_and_validation(tmp_path):
     assert config.watch_dirs == [(config.root / "inbox").resolve()]
     assert (config.root / "inbox").is_dir()
     assert config.values["organize"]["enabled"] is False
+    assert config.values["sources"]["dsh"] is True
+    assert config.values["dsh"]["root"] == "~/.dsh/sessions"
     path = config.root / "config.toml"
     assert path.exists()
 
@@ -86,6 +88,7 @@ def test_inbox_and_organize_defaults_and_validation(tmp_path):
     ('reasoning_effort = "low"', 'reasoning_effort = "x"'),
     ('watch_dirs = ["inbox"]', 'watch_dirs = ["inbox", 1]'),
     ('[organize]\nenabled = false', '[organize]\nenabled = "yes"'),
+    ('[dsh]\nroot = "~/.dsh/sessions"', '[dsh]\nroot = "relative"'),
 ])
 def test_inbox_and_organize_config_validation(tmp_path, old, new):
     root = tmp_path / "data"

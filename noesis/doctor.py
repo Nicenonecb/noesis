@@ -143,6 +143,18 @@ def diagnose(config: Config) -> list[Check]:
             checks.append(Check("Codex history", "ok", "补充历史文件可读；不保证覆盖桌面会话"))
         except OSError:
             checks.append(Check("Codex history", "manual", "补充历史不可读；sessions 仍可独立使用", "检查 codex.history_file"))
+    if enabled.get('dsh'):
+        root = config.source_path('dsh', 'root')
+        if not root.exists():
+            checks.append(Check("DSH sessions", "manual", f"目录不存在：{root}", "使用 DSH 产生一次会话后重试"))
+        else:
+            files = list(root.rglob('session.v4.jsonl.zstd'))
+            if not files:
+                checks.append(Check("DSH sessions", "manual", "尚未发现会话文件", "使用 DSH 产生一次会话后重试"))
+            elif shutil.which('zstd') is None:
+                checks.append(Check("DSH sessions", "fail", f"找到 {len(files)} 个会话文件，但缺少 zstd", "安装 zstd（例如 brew install zstd）后重试"))
+            else:
+                checks.append(Check("DSH sessions", "ok", f"找到 {len(files)} 个会话文件；zstd 可用"))
     if enabled['browser_history']:
         from .collectors.browser_history import profiles
         seen=set()

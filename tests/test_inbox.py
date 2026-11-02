@@ -20,6 +20,8 @@ def test_import_moves_dedupes_and_renders(tmp_path, monkeypatch):
     config = make_config(tmp_path, monkeypatch)
     source = tmp_path / 'Screenshot 2026-11-01 at 01.02.03.png'
     source.write_bytes(PNG)
+    timestamp = 1_793_466_123
+    os.utime(source, (timestamp, timestamp))
     result = import_screenshot(config, source, background=False)
     assert result['status'] == 'imported'
     assert not source.exists()

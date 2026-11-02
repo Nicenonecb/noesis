@@ -9,7 +9,7 @@ NOESIS 是面向 macOS 的个人活动记录工具，将散落在对话、代码
 
 | 能力 | 说明 |
 |---|---|
-| 对话归档 | 增量采集 Claude Code 与 Codex 的本机会话，去重并保留来源线索。 |
+| 对话归档 | 增量采集 Claude Code、Codex 与 DeepSeek Harness（DSH）的本机会话，去重并保留来源线索。 |
 | 代码记录 | 采集 Git 提交，按仓库和项目统一组织，支持 worktree 去重。 |
 | 浏览历史 | 采集 Chrome、Arc、Safari 历史，支持过滤和连续访问合并。 |
 | 截图收藏 | 快捷键收藏窗口或区域，补充备注、网页正文和本地 Vision OCR。 |
@@ -80,6 +80,7 @@ noesis collect --source claude_code --backfill 7d
 noesis collect --source codex --backfill all --dry-run
 noesis collect --source git
 noesis collect --source browser_history
+noesis collect --source dsh
 
 # 管理 Git 仓库与项目归属
 noesis repos list
@@ -95,6 +96,8 @@ noesis audit-redaction --fix
 ```
 
 `noesis collect --replay` 可以重读对话并保留正常采集游标。`stats` 的“今天新增”按入库时间统计。
+DSH 会话保存在 `~/.dsh/sessions/` 的 `session.v4.jsonl.zstd`；采集需要 `zstd` 命令
+（`brew install zstd`），只读取用户与助手文本，跳过推理、工具调用和系统注入。
 退出码 `0` 表示完成或被并发锁跳过，`1` 表示部分来源失败或审计有未处理命中，`2` 表示配置或运行错误。
 `daily-run` 即使部分来源失败也会生成日志，并通过退出码保留失败状态。
 
@@ -166,6 +169,7 @@ scripts/uninstall.sh
 ## 数据与隐私
 
 - 对话记录保留来源信息，排除工具结果、系统注入和推理内容；过长文本按配置截断。
+- DSH 会话在本地用 zstd 解压后只采集用户与助手文本；图片、工具结果和推理内容不入库。
 - Git 只采集配置及本机 Git 邮箱集合的提交，不保存 diff。
 - 浏览器历史通过临时数据库副本读取；普通历史不保存网页正文，主动收藏才提取正文。
 - 自动收件箱会导入监听目录中的全部图片；请只把截图保存位置指向该目录，或关闭 `auto_import`。

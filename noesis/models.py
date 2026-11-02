@@ -8,6 +8,7 @@ from typing import Any
 SOURCE_KINDS = {
     "claude_code": {"user_msg", "assistant_msg"},
     "codex": {"user_msg", "assistant_msg"},
+    "dsh": {"user_msg", "assistant_msg"},
     "browser_history": {"visit"},
     "capture": {"capture"},
     "git": {"commit"},
@@ -77,7 +78,7 @@ class Session:
     raw_path: str = ""
 
     def __post_init__(self):
-        if self.source not in {"claude_code", "codex"} or not self.session_id:
+        if self.source not in {"claude_code", "codex", "dsh"} or not self.session_id:
             raise ValueError("不支持的会话来源或会话 ID。")
         for name in ("started_at", "ended_at"):
             object.__setattr__(self, name, utc_timestamp(getattr(self, name)))

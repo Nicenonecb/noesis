@@ -14,7 +14,7 @@ from ..redact import redact
 from ..capture.render import single_line
 from ..files import write_if_changed
 
-LABELS={'claude_code':'Claude Code','codex':'Codex','git':'Git','browser_history':'浏览','capture':'收藏'}
+LABELS={'claude_code':'Claude Code','codex':'Codex','dsh':'DSH','git':'Git','browser_history':'浏览','capture':'收藏'}
 
 
 def excerpt(value,limit):
@@ -68,7 +68,7 @@ def render_day(conn, day, tz):
     lines+=['','## 按项目','']
     groups=defaultdict(list)
     for event in events:
-        if event.source in {'claude_code','codex','git'}:groups[event.project or None].append(event)
+        if event.source in {'claude_code','codex','dsh','git'}:groups[event.project or None].append(event)
     order=sorted((project for project in groups if project),key=lambda p:(-durations.get(p,0),p))
     if None in groups:order.append(None)
     for project in order:
@@ -76,7 +76,7 @@ def render_day(conn, day, tz):
         lines+=([f'### {single_line(project)} · 约 {minutes//60}h {minutes%60}m',''] if project else ['## 未归类',''])
         conversation=defaultdict(list)
         for event in groups[project]:
-            if event.source in {'claude_code','codex'}:conversation[(event.source,event.session_id)].append(event)
+            if event.source in {'claude_code','codex','dsh'}:conversation[(event.source,event.session_id)].append(event)
         for key,items in sorted(conversation.items(),key=lambda pair:(pair[1][0].ts,str(pair[0]))):
             session=sessions.get(key)
             title=session.title if session else items[0].content[:60]

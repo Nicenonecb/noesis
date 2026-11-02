@@ -111,7 +111,7 @@ def get_repos(conn, *, enabled=None):
 
 def project_rows(conn):
     return [(row['id'], json.loads(row['meta']).get('cwd')) for row in conn.execute(
-        "SELECT id,meta FROM events WHERE source IN ('claude_code','codex')")]
+        "SELECT id,meta FROM events WHERE source IN ('claude_code','codex','dsh')")]
 
 
 def browser_visits(conn, kind, cursor):
@@ -202,7 +202,7 @@ def project_time(conn, *, start, end):
     query interval; no time is inferred from events outside that interval.
     """
     groups = defaultdict(list)
-    for event in get_events(conn, start=start, end=end, sources=["claude_code", "codex", "git", "capture"]):
+    for event in get_events(conn, start=start, end=end, sources=["claude_code", "codex", "dsh", "git", "capture"]):
         if event.project:
             groups[event.project].append(datetime.fromisoformat(event.ts))
     result = []
@@ -239,7 +239,7 @@ def session_summaries(conn, *, source=None):
     M1.0 uses the first user message for the title. Parser-provided titles and
     empty sessions are added in M1.1/M1.2; preserve explicit existing titles.
     """
-    clauses, params = ["source IN ('claude_code','codex')", "session_id IS NOT NULL"], []
+    clauses, params = ["source IN ('claude_code','codex','dsh')", "session_id IS NOT NULL"], []
     _filter(clauses, params, "source", source)
     rows = conn.execute(f"SELECT * FROM events WHERE {' AND '.join(clauses)} ORDER BY ts,rowid", params)
     groups = defaultdict(list)

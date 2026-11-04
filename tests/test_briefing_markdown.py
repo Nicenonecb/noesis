@@ -1,3 +1,4 @@
+import re
 from html.parser import HTMLParser
 
 import pytest
@@ -91,6 +92,26 @@ def test_markdown_is_rendered_in_summary_items_and_evidence(tmp_path):
     assert tags.count('strong') >= 3  # summary, recommendation, source body
     assert 'em' in tags and 'code' in tags and 'blockquote' in tags
     assert '**粗体**' not in '\n'.join(document.text)
+
+
+def test_single_block_summary_is_split_into_readable_paragraphs(tmp_path):
+    record = report(text='synthetic')
+    record['evidence'][0]['project'] = 'novel2026'
+    record['result']['summary'] = '昨日集中两条线。novel2026：完成细则并提交。Codex 侧仅咨询工具。'
+    html, md = rendered(tmp_path, record)
+    assert re.findall(r'<p>(.*?)</p>', html)[:3] == [
+        '昨日集中两条线。', 'novel2026：完成细则并提交。', 'Codex 侧仅咨询工具。']
+    assert '昨日集中两条线。\n\nnovel2026：完成细则并提交。\n\nCodex 侧仅咨询工具。' in md
+
+
+def test_summary_keeps_explicit_breaks_and_inline_markdown_intact(tmp_path):
+    record = report(text='synthetic')
+    record['result']['summary'] = '第一段。\n\n第二段。'
+    html, _ = rendered(tmp_path, record)
+    assert re.findall(r'<p>(.*?)</p>', html)[:2] == ['第一段。', '第二段。']
+    record['result']['summary'] = '**一句话。**'
+    html, _ = rendered(tmp_path, record)
+    assert re.findall(r'<p>(.*?)</p>', html)[:1] == ['<strong>一句话。</strong>']
 
 
 def test_code_fences_are_preserved_in_export_and_rendered_as_code(tmp_path):

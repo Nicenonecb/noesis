@@ -12,57 +12,83 @@ from ..capture.render import single_line
 from ..render.markdown import export_markdown, render_markdown
 
 LABELS = {'completed': '昨日成果', 'progress': '进行中的工作', 'unfinished': '未完成与待确认', 'priorities': '今日建议 · 待你确认'}
+SHORT_LABELS = {'priorities': '今日建议', 'unfinished': '待确认', 'progress': '进行中', 'completed': '已完成'}
+# Most actionable first: what to do, what is stuck, what is moving, what is done.
+ORDER = ('priorities', 'unfinished', 'progress', 'completed')
 CSS = '''*{box-sizing:border-box}
 body{margin:0;background:#fbfaf6;color:#26332c;font:16px/1.8 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
-main{max-width:920px;margin:0 auto;padding:44px 44px 64px}
+main{max-width:780px;margin:0 auto;padding:40px 40px 64px}
 a{color:#3f6a4e;text-decoration:none;border-bottom:1px solid #ccd9cc}a:hover{border-bottom-color:#3f6a4e}
 .muted{color:#7c8a80;font-size:12.5px;line-height:1.9}
+.kicker,.meta,.count,.references,.evidence-heading strong{font-family:ui-monospace,"SF Mono",Menlo,monospace}
 .masthead{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding-bottom:10px;border-bottom:1.5px solid #26332c}
-.wordmark{font-family:"Songti SC",STSong,serif;font-size:13px;font-weight:700;letter-spacing:.22em;color:#26332c}
-.kicker{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:10.5px;letter-spacing:.24em;color:#7c8a80}
-.lead-block{margin-top:26px}
-h1{display:flex;align-items:baseline;flex-wrap:wrap;margin:0;font-family:"Songti SC",STSong,serif;font-size:38px;line-height:1.25;font-weight:700;letter-spacing:0}
-h1 time{font-variant-numeric:tabular-nums;letter-spacing:.01em}
-.h1-tail{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:20px;font-weight:500;letter-spacing:.02em;color:#5b6d61}
-.summary{margin-top:16px;max-width:42em;font-size:16px;line-height:1.85;color:#2b3a31}
+.wordmark{font-family:"Songti SC",STSong,serif;font-size:13px;font-weight:700;letter-spacing:.22em}
+.kicker{font-size:10.5px;letter-spacing:.24em;color:#7c8a80}
+.lead-block{margin-top:24px}
+h1{display:flex;align-items:baseline;flex-wrap:wrap;margin:0;font-family:"Songti SC",STSong,serif;font-size:34px;line-height:1.25;font-weight:700}
+h1 time{font-variant-numeric:tabular-nums}
+.h1-tail{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:18px;font-weight:500;color:#5b6d61}
+.summary{margin-top:14px;font-size:15.5px;line-height:1.8;color:#2b3a31}
 .summary .markdown-body{font-size:inherit;line-height:inherit}
-.summary p{margin:0 0 14px}.summary p:last-child{margin-bottom:0}
+.summary p{margin:0 0 12px}.summary p:last-child{margin-bottom:0}
 .summary-list{list-style:none;margin:0;padding:0}
-.summary-list li{position:relative;margin:0 0 9px;padding-left:19px;font-size:15.5px;line-height:1.8}
+.summary-list li{position:relative;margin:0 0 7px;padding-left:18px}
 .summary-list li:last-child{margin-bottom:0}
-.summary-list li::before{content:"";position:absolute;left:3px;top:.7em;width:5px;height:5px;border-radius:1px;background:#7f9882}
-.summary-project{font-weight:600;color:#3b5745;margin-right:1px}
-.meta{margin-top:18px;padding-top:12px;border-top:1px solid #e6e8df;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.06em;color:#87948a}
-.focus{margin-top:30px;padding:24px 28px 22px;background:#eef3e7;border-left:3px solid #5f8265;border-radius:0 3px 3px 0}
-.focus h2{margin:0 0 10px;font-family:"Songti SC",STSong,serif;font-size:21px;font-weight:700;letter-spacing:.01em}
-.focus h3{margin:18px 0 4px;font-size:16px;font-weight:650}
+.summary-list li::before{content:"";position:absolute;left:3px;top:.72em;width:5px;height:5px;border-radius:1px;background:#7f9882}
+.summary-project{font-weight:650;color:#3b5745}
+.overview{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.overview a{display:flex;align-items:baseline;gap:6px;padding:4px 12px;border:1px solid #dfe4d8;border-radius:3px;background:#fff;font-size:13px;color:#3f5548}
+.overview a:hover{border-color:#a9bba5}
+.overview b{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:14px;font-weight:650;color:#26332c}
+.overview .is-empty{opacity:.55}
+.overview .tone-priorities{border-color:#9db79c;background:#eef3e7}
+.overview .tone-unfinished b{color:#9a5b1f}
+.meta{margin-top:16px;font-size:11px;letter-spacing:.04em;color:#87948a}
+.caveat{margin:4px 0 0;font-size:12.5px;line-height:1.8;color:#7c8a80}
+.caveat.warn{margin-top:10px;padding:8px 12px;background:#fbf0df;border-left:3px solid #c9893d;color:#7a4a17}
+.focus{margin-top:28px;padding:20px 24px 18px;background:#eef3e7;border-left:3px solid #5f8265;border-radius:0 3px 3px 0}
+.focus h2{margin:0 0 8px;font-family:"Songti SC",STSong,serif;font-size:19px;font-weight:700}
+.focus h3{margin:16px 0 4px;font-size:16px;font-weight:650}
 .focus p{margin:6px 0;font-size:15px;line-height:1.85}
-.focus .muted{font-size:12.5px;line-height:1.85;color:#64766a}
+.focus .muted{font-size:12.5px;color:#64766a}
+.focus.is-empty{padding:10px 16px;background:none;border-left-color:#c9d5c3}
+.focus.is-empty h2{display:inline;margin:0 10px 0 0;font-family:inherit;font-size:13px;font-weight:650;color:#3f5548}
+.focus.is-empty p{display:inline;margin:0;font-size:12.5px;color:#7c8a80}
+.focus.is-empty p+p{display:block;margin-top:4px}
 .checkin article+article{margin-top:18px;padding-top:14px;border-top:1px solid #d3ddcd}
 .checkin-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
 .checkin-actions a{padding:3px 12px;border:1px solid #b3c7ae;border-radius:2px;background:#fbfaf6;font-size:12.5px;line-height:1.8}
-.ledger{margin-top:36px;border-top:1.5px solid #26332c}
-.chapter{display:grid;grid-template-columns:180px minmax(0,1fr);gap:0 32px;padding:30px 0 10px;border-bottom:1px solid #e6e8df}
-.chapter:last-child{border-bottom:0;padding-bottom:0}
-.chapter-head{align-self:start;position:sticky;top:20px}
-.chapter-no{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:10.5px;letter-spacing:.22em;color:#9aa79d}
-.chapter-head h2{margin:7px 0 3px;font-size:15.5px;line-height:1.5;font-weight:650;letter-spacing:.04em}
-.chapter-priorities .chapter-head h2{color:#37553f}
-.chapter-count{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:.1em;color:#9aa79d}
-.entries{min-width:0}
-.entries ul{list-style:none;margin:0;padding:0}
-.entries li{padding:0 0 22px;margin:0 0 22px;border-bottom:1px solid #eceee7}
-.entries li:last-child{padding-bottom:0;margin-bottom:0;border-bottom:0}
-.entries .markdown-body{font-size:15.5px;line-height:1.85;color:#2b3a31}
-.project-tags{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px}
-.project-tag{display:inline-block;max-width:100%;padding:2px 8px;background:#edf2e8;border-radius:2px;color:#44624f;font-size:12px;font-weight:600;letter-spacing:.02em;overflow-wrap:anywhere}
-.references{margin-top:9px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:10.5px;letter-spacing:.04em;color:#93a096}
-.references a{color:#6c8574;border-bottom:0}
+.chapter{margin-top:40px;scroll-margin-top:20px}
+.chapter-head{display:flex;align-items:baseline;gap:10px;padding-bottom:8px;border-bottom:1.5px solid #26332c}
+.chapter-head h2{margin:0;font-size:17px;line-height:1.5;font-weight:700;letter-spacing:.04em}
+.count{font-size:11px;letter-spacing:.08em;color:#9aa79d;font-weight:400}
+.chapter-unfinished .chapter-head{border-bottom-color:#c9893d}
+.chapter-unfinished .chapter-head h2{color:#8a5219}
+.entries{list-style:none;margin:0;padding:0}
+.entry{padding:14px 0;border-bottom:1px solid #eceee7}
+.entry:last-child{border-bottom:0}
+.lead{margin:0;font-size:15.5px;line-height:1.75;font-weight:650;color:#1f2b24}
+.detail{margin:3px 0 0;font-size:14.5px;line-height:1.8;color:#4a5a50}
+.entry .markdown-body{font-size:15px;line-height:1.8;color:#2b3a31}
+.references{margin-top:5px;font-size:10.5px;letter-spacing:.03em;color:#a3aea6}
+.references a{color:#8a9d8f;border-bottom:0;margin-right:4px}
+.project-tags{display:flex;flex-wrap:wrap;gap:6px}
+.project-tag{display:inline-block;max-width:100%;padding:1px 8px;background:#edf2e8;border-radius:2px;color:#44624f;font-size:12px;font-weight:650;letter-spacing:.02em;overflow-wrap:anywhere}
+.group{margin-top:18px}
+.group>.project-tags{margin-bottom:2px}
+.group .entry{padding:10px 0 10px 14px;border-bottom:0;border-left:2px solid #e3e8dd}
+.group .entry+.entry{margin-top:2px}
+.chapter-priorities{counter-reset:pick}
+.chapter-priorities .entry{position:relative;margin-top:14px;padding:16px 20px 14px 56px;background:#fff;border:1px solid #dfe6d9;border-left:3px solid #5f8265;border-radius:0 3px 3px 0}
+.chapter-priorities .entry::before{counter-increment:pick;content:counter(pick);position:absolute;left:18px;top:14px;font-family:"Songti SC",STSong,serif;font-size:24px;font-weight:700;line-height:1.2;color:#5f8265}
+.chapter-priorities .project-tags{margin-bottom:6px}
+.chapter-priorities .lead{font-size:16.5px}
+.chapter-completed .lead{font-weight:600}
 .markdown-body{min-width:0;overflow-wrap:anywhere}
 .markdown-body>:first-child{margin-top:0}.markdown-body>:last-child{margin-bottom:0}
 .markdown-body p{margin:10px 0}
-.markdown-body h1,.markdown-body h2{font-size:20px;margin:22px 0 10px}
-.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:17px;margin:18px 0 8px}
+.markdown-body h1,.markdown-body h2{font-size:18px;margin:20px 0 8px}
+.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:16px;margin:16px 0 6px}
 .markdown-body ul,.markdown-body ol{padding-left:22px;margin:10px 0}.markdown-body li{margin:4px 0}
 .markdown-body blockquote{margin:14px 0;padding:2px 16px;border-left:2px solid #b9cbb2;color:#516353}
 .markdown-body code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.88em;background:#eef0e8;padding:1px 5px;border-radius:2px}
@@ -74,27 +100,30 @@ h1 time{font-variant-numeric:tabular-nums;letter-spacing:.01em}
 .markdown-body hr{border:0;border-top:1px solid #e6e8df;margin:20px 0}
 .markdown-body .task-list-item{list-style:none}
 .markdown-body .task-list-item-checkbox{margin:0 7px 0 -18px;accent-color:#5f8265}
-.sources{margin-top:44px;border-top:1.5px solid #26332c;padding-top:16px}
-.sources summary{display:flex;align-items:baseline;gap:10px;cursor:pointer;list-style:none;font-size:12.5px;font-weight:600;letter-spacing:.12em;color:#3f5548}
+.sources{margin-top:56px;padding-top:14px;border-top:1.5px solid #26332c}
+.sources summary{display:flex;align-items:baseline;gap:10px;cursor:pointer;list-style:none;font-size:12.5px;font-weight:650;letter-spacing:.12em;color:#3f5548}
 .sources summary::-webkit-details-marker{display:none}
 .sources summary::after{content:"＋";margin-left:auto;font-weight:400;color:#8b988e}
 .sources[open] summary::after{content:"－"}
-.sources .count{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:10.5px;letter-spacing:.08em;color:#9aa79d;font-weight:400}
-.evidence{padding:22px 0;border-top:1px solid #eceee7;scroll-margin-top:24px}
-.evidence:first-of-type{border-top:0}
-.evidence-heading{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
-.evidence-heading strong{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;font-weight:600;letter-spacing:.06em;color:#5f7c66}
-.evidence-heading .muted{font-size:11px;letter-spacing:.02em;color:#93a096}
-.evidence-title{margin:2px 0 6px;font-size:15px;font-weight:600;line-height:1.7}
-.evidence .markdown-body{max-width:52em;font-size:14.5px;line-height:1.8;color:#3a4a40}
-.image-reference{color:#7c8a80;font-size:14px}
-footer{margin-top:40px;padding-top:14px;border-top:1px solid #e6e8df;font-size:11.5px;line-height:1.9;color:#8b988e}
-@media(max-width:760px){main{padding:28px 20px 48px}h1{font-size:31px}.h1-tail{font-size:18px}.lead-block{margin-top:20px}.focus{padding:20px 20px 18px;margin-top:28px}.chapter{grid-template-columns:1fr;gap:12px;padding:26px 0 6px}.chapter-head{position:static;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.chapter-head h2{margin:0;font-size:15px}.chapter-count{margin-left:auto}.evidence .markdown-body{max-width:none}}'''
+.sources-note{margin:2px 0 6px;font-size:12px;color:#93a096}
+.evidence{padding:12px 0;border-top:1px solid #eceee7;scroll-margin-top:24px}
+.evidence:target{background:#f3f6ee;box-shadow:-12px 0 0 #f3f6ee,12px 0 0 #f3f6ee}
+.evidence-heading{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.evidence-heading strong{font-size:11px;font-weight:650;letter-spacing:.06em;color:#5f7c66}
+.evidence-heading .muted{font-size:11px;color:#93a096}
+.evidence-title{margin:2px 0 4px;font-size:13.5px;font-weight:600;line-height:1.7;color:#3a4a40}
+.evidence .markdown-body{font-size:13px;line-height:1.75;color:#55655b}
+.evidence .markdown-body h1,.evidence .markdown-body h2,.evidence .markdown-body h3,.evidence .markdown-body h4,.evidence .markdown-body h5,.evidence .markdown-body h6{font-size:13.5px;margin:12px 0 4px}
+.evidence .markdown-body p,.evidence .markdown-body ul,.evidence .markdown-body ol,.evidence .markdown-body blockquote,.evidence .markdown-body pre{margin:6px 0}
+.image-reference{color:#7c8a80;font-size:13px}
+@media(max-width:760px){main{padding:26px 18px 48px}h1{font-size:28px}.h1-tail{font-size:16px}.focus{padding:18px 18px 16px}.chapter{margin-top:32px}.chapter-priorities .entry{padding:14px 14px 12px 44px}.chapter-priorities .entry::before{left:14px;font-size:20px}}'''
 
 
 SENTENCE_END = re.compile(r'[^。！？!?]+[。！？!?]+[”’」』]?|[^。！？!?]+$')
 MARKDOWN_SYNTAX = re.compile(r'[*_`\[\]|#]')
 PROJECT_BREAKS = {'', ' ', '：', ':', '，', ',', '、'}
+LEAD_COLON = re.compile(r'[：:]')
+FIRST_SENTENCE = re.compile(r'[^。！？!?]+[。！？!?]+[”’」』]?')
 
 
 def literal_markdown(text):
@@ -111,6 +140,28 @@ def _leading_project(text, names):
         if text.startswith(name) and text[len(name):len(name) + 1] in PROJECT_BREAKS:
             return name
     return None
+
+
+def split_lead(text):
+    """Split plain item text into a short headline and its details, without rewording."""
+    text = text.strip()
+    if '\n' in text or MARKDOWN_SYNTAX.search(text):
+        return None
+    sentence = FIRST_SENTENCE.match(text)
+    colon = LEAD_COLON.search(text, 0, sentence.end() if sentence else len(text))
+    if colon and 4 <= colon.start() <= 24:
+        return text[:colon.start()], text[colon.end():].strip()
+    if sentence and len(sentence.group(0)) <= 80:
+        return sentence.group(0).strip(), text[sentence.end():].strip()
+    return None
+
+
+def render_item_text(text, scope):
+    parts = split_lead(text)
+    if parts is None:
+        return f'<div class="markdown-body">{render_markdown(text, scope)}</div>'
+    lead, rest = parts
+    return f'<p class="lead">{escape(lead)}</p>' + (f'<p class="detail">{escape(rest)}</p>' if rest else '')
 
 
 def render_summary(text, projects=()):
@@ -137,7 +188,7 @@ def render_summary(text, projects=()):
 
 def render_focus(focuses, advice=(), *, delivery=None):
     interactive = delivery is not None
-    html = ['<section class="focus checkin"><h2>今天，朝想成为的自己走一步</h2>']
+    html = ['<section class="focus checkin' + ('' if focuses else ' is-empty') + '"><h2>今天，朝想成为的自己走一步</h2>']
     md = ['## 主动跟进 · 你的发展方向', '']
     by_id = {item['focus_id']: item for item in advice}
     if not focuses:
@@ -227,7 +278,9 @@ def write_briefing(config, record):
     interactive = day == local_day(config).isoformat()
     focuses = due_focuses(config, local_day(config)) if interactive else record.get('focuses', [])
     focus_html, focus_md = render_focus(focuses, result.get('focus_advice', []), delivery=day if interactive else None)
-    md += focus_md
+    overview = ''.join(
+        f'<a class="tone-{key}' + ('' if result[key] else ' is-empty') + f'" href="#{key}">'
+        f'{SHORT_LABELS[key]}<b>{len(result[key])}</b></a>' for key in ORDER)
     html = ['<!doctype html><html lang="zh-CN"><meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width,initial-scale=1">',
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">',
@@ -236,18 +289,20 @@ def write_briefing(config, record):
             '<span class="kicker">MORNING BRIEF</span></div>',
             f'<header class="lead-block"><h1><time datetime="{day}">{day}</time>'
             '<span class="h1-tail">，从昨天继续。</span></h1>',
-            f'<div class="summary">{summary_html}</div>'
-            f'<div class="meta">{escape(metadata)}</div></header>', focus_html, '<div class="ledger">']
-    for number, key in enumerate(('priorities', 'completed', 'progress', 'unfinished'), start=1):
+            f'<div class="summary">{summary_html}</div>',
+            f'<nav class="overview">{overview}</nav>',
+            f'<div class="meta">{escape(metadata)}</div>',
+            '<p class="caveat' + (' warn' if unhealthy or record['omitted_events'] else '') + f'">{escape(caveat)}</p>',
+            '</header>']
+    for key in ORDER:
         items = result[key]
         md += ['## ' + LABELS[key], '']
-        html += [f'<section class="chapter chapter-{key}"><header class="chapter-head">'
-                 f'<div class="chapter-no">{number:02d}</div><h2>{LABELS[key]}</h2>'
-                 + (f'<div class="chapter-count">{len(items)} 项</div>' if items else '')
-                 + '</header><div class="entries"><ul>']
+        html.append(f'<section class="chapter chapter-{key}" id="{key}"><header class="chapter-head">'
+                    f'<h2>{LABELS[key]}</h2><span class="count">{len(items)} 项</span></header>')
         if not items:
             md.append('暂无足够依据。')
-            html.append('<li class="muted">暂无足够依据。</li>')
+            html.append('<p class="muted">暂无足够依据。</p>')
+        groups = {}
         for index, item in enumerate(items):
             task = tasks.get(item.get('task_id'), {})
             if 'projects' in task:
@@ -260,20 +315,34 @@ def write_briefing(config, record):
                                               if evidence[ref].get('project')))
                 prefix = '来源项目：'
             labels = [prefix + project for project in projects] or ['未归属项目']
-            badges = ''.join(f'<span class="project-tag">{escape(label)}</span>' for label in labels)
-            refs = ' '.join(f'<a href="#{ref}">[{ref}]</a>' for ref in item['refs'])
-            html.append(f'<li><div class="project-tags">{badges}</div><div class="markdown-body">{render_markdown(item["text"], f"{key}-{index}")}</div>'
-                        f'<div class="references">{refs}</div></li>')
+            refs = ' '.join(f'<a href="#{ref}">{ref}</a>' for ref in item['refs'])
+            entry = (render_item_text(item['text'], f'{key}-{index}')
+                     + f'<div class="references">{refs}</div></li>')
+            # Suggestions keep their ranking; other sections gather entries under one project heading.
+            group = (index,) if key == 'priorities' else tuple(labels)
+            groups.setdefault(group, (labels, []))[1].append(entry)
             lines = export_markdown(item['text'], f'{key}-{index}').split('\n')
             # Entities keep names literal, including Markdown and auto-link syntax.
             project_label = ' · '.join(labels)
             project_label = literal_markdown(project_label)
             md.append('- **' + project_label + '**\n\n  ' + lines[0] + ''.join('\n  ' + line for line in lines[1:]) + '\n\n  '
                       + ' '.join(f'[{ref}](#{ref.lower()})' for ref in item['refs']))
+        for labels, entries in groups.values():
+            badges = '<div class="project-tags">' + ''.join(
+                f'<span class="project-tag">{escape(label)}</span>' for label in labels) + '</div>'
+            if key == 'priorities':
+                html.append('<ul class="entries"><li class="entry">' + badges + entries[0] + '</ul>')
+            else:
+                html.append('<div class="group">' + badges + '<ul class="entries">'
+                            + ''.join('<li class="entry">' + entry for entry in entries) + '</ul></div>')
         md.append('')
-        html.append('</ul></div></section>')
-    html.append('</div><details class="sources" open><summary>来源摘录'
-                f'<span class="count">{len(record["evidence"])} 条</span></summary>')
+        html.append('</section>')
+        if key == 'priorities':  # Check-ins follow today's suggestions, before yesterday's review.
+            html.append(focus_html)
+            md += focus_md
+    html.append('<details class="sources" open><summary>来源摘录'
+                f'<span class="count">{len(record["evidence"])} 条</span></summary>'
+                '<p class="sources-note">上文编号对应的原始记录，供核对用。</p>')
     md += ['## 来源摘录', '']
     for item in record['evidence']:
         timestamp = datetime.fromisoformat(item['time']).astimezone(config.timezone).strftime('%Y-%m-%d %H:%M')
@@ -301,7 +370,7 @@ def write_briefing(config, record):
             html.append('<p class="muted">此处为截断摘录。</p>')
             md += ['*此处为截断摘录。*', '']
         html.append('</article>')
-    html += ['</details><footer>' + escape(caveat) + '</footer></main></html>']
+    html += ['</details></main></html>']
     root = config.root / 'briefings' / day
     write_if_changed(root.with_suffix('.md'), '\n'.join(md))
     write_if_changed(root.with_suffix('.html'), '\n'.join(html))

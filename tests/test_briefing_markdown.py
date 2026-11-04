@@ -217,3 +217,47 @@ def test_link_references_do_not_resolve_to_another_excerpt(tmp_path):
     exported = render_markdown(md, 'export')
     assert 'href="https://example.invalid/one"' in exported
     assert 'href="https://example.invalid/two"' in exported
+
+
+def test_items_split_into_headline_and_details_without_rewording(tmp_path):
+    record = report(text='synthetic')
+    record['result']['completed'] = [
+        {'text': '规范落地并推送：第三章改写，已提交。', 'refs': ['E1']},
+        {'text': '细纲 v3 完成。边界：正文未写。', 'refs': ['E1']},
+        {'text': '只有一句。', 'refs': ['E1']},
+        {'text': '**含标记**的条目保持 Markdown。', 'refs': ['E1']}]
+    html, md = rendered(tmp_path, record)
+    assert '<p class="lead">规范落地并推送</p><p class="detail">第三章改写，已提交。</p>' in html
+    assert '<p class="lead">细纲 v3 完成。</p><p class="detail">边界：正文未写。</p>' in html
+    assert '<p class="lead">只有一句。</p><div class="references">' in html
+    assert '<strong>含标记</strong>' in html
+    assert '规范落地并推送：第三章改写，已提交。' in md  # Export keeps the model's wording.
+
+
+def test_sections_lead_with_actions_and_group_entries_by_project(tmp_path):
+    record = report(text='synthetic')
+    record['result']['tasks'] = [{'id': 'A', 'projects': ['alpha']}, {'id': 'B', 'projects': ['beta']}]
+    record['result']['completed'] = [{'text': f'第{n}项。', 'refs': ['E1'], 'task_id': task}
+                                     for n, task in enumerate('ABA', start=1)]
+    record['result']['unfinished'] = [{'text': '待确认。', 'refs': ['E1']}]
+    html, md = rendered(tmp_path, record)
+    positions = [html.index(f'id="{key}"') for key in ('priorities', 'unfinished', 'progress', 'completed')]
+    assert positions == sorted(positions)
+    assert html.index('class="focus checkin is-empty"') < positions[1]
+    assert [md.index('## ' + label) for label in ('今日建议', '主动跟进', '未完成', '进行中', '昨日成果')] == \
+        sorted(md.index('## ' + label) for label in ('今日建议', '主动跟进', '未完成', '进行中', '昨日成果'))
+    completed = html[positions[3]:]
+    assert completed.count('<span class="project-tag">alpha</span>') == 1
+    assert completed.index('第1项') < completed.index('第3项') < completed.index('第2项')
+    assert '<a class="tone-completed" href="#completed">已完成<b>3</b></a>' in html
+    assert '<a class="tone-progress is-empty" href="#progress">进行中<b>0</b></a>' in html
+
+
+def test_incomplete_input_is_flagged_next_to_the_summary(tmp_path):
+    record = report(text='synthetic')
+    html, _ = rendered(tmp_path, record)
+    assert '<p class="caveat">' in html
+    record['source_health'] = {'git': 'error'}
+    html, _ = rendered(tmp_path, record)
+    caveat = html.index('<p class="caveat warn">')
+    assert caveat < html.index('id="priorities"') and '来源采集未全部成功：git' in html[caveat:]

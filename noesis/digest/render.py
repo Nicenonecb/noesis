@@ -24,9 +24,14 @@ a{color:#3f6a4e;text-decoration:none;border-bottom:1px solid #ccd9cc}a:hover{bor
 h1{display:flex;align-items:baseline;flex-wrap:wrap;margin:0;font-family:"Songti SC",STSong,serif;font-size:38px;line-height:1.25;font-weight:700;letter-spacing:0}
 h1 time{font-variant-numeric:tabular-nums;letter-spacing:.01em}
 .h1-tail{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:20px;font-weight:500;letter-spacing:.02em;color:#5b6d61}
-.summary{margin-top:14px;max-width:40em;font-size:16.5px;line-height:1.9;color:#2b3a31}
+.summary{margin-top:16px;max-width:42em;font-size:16px;line-height:1.85;color:#2b3a31}
 .summary .markdown-body{font-size:inherit;line-height:inherit}
 .summary p{margin:0 0 14px}.summary p:last-child{margin-bottom:0}
+.summary-list{list-style:none;margin:0;padding:0}
+.summary-list li{position:relative;margin:0 0 9px;padding-left:19px;font-size:15.5px;line-height:1.8}
+.summary-list li:last-child{margin-bottom:0}
+.summary-list li::before{content:"";position:absolute;left:3px;top:.7em;width:5px;height:5px;border-radius:1px;background:#7f9882}
+.summary-project{font-weight:600;color:#3b5745;margin-right:1px}
 .meta{margin-top:18px;padding-top:12px;border-top:1px solid #e6e8df;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.06em;color:#87948a}
 .focus{margin-top:30px;padding:24px 28px 22px;background:#eef3e7;border-left:3px solid #5f8265;border-radius:0 3px 3px 0}
 .focus h2{margin:0 0 10px;font-family:"Songti SC",STSong,serif;font-size:21px;font-weight:700;letter-spacing:.01em}
@@ -89,44 +94,45 @@ footer{margin-top:40px;padding-top:14px;border-top:1px solid #e6e8df;font-size:1
 
 SENTENCE_END = re.compile(r'[^。！？!?]+[。！？!?]+[”’」』]?|[^。！？!?]+$')
 MARKDOWN_SYNTAX = re.compile(r'[*_`\[\]|#]')
+PROJECT_BREAKS = {'', ' ', '：', ':', '，', ',', '、'}
 
 
 def literal_markdown(text):
     return ''.join(f'&#{ord(c)};' if c in '\\`*_{}[]<>()#+!|~&:' else c for c in single_line(text))
 
 
-def summary_paragraphs(text, projects=()):
-    """Explicit paragraph breaks win; otherwise keep one project per paragraph."""
-    blocks = [line.strip() for line in text.splitlines() if line.strip()]
-    if len(blocks) != 1 or MARKDOWN_SYNTAX.search(blocks[0]):
-        return blocks
-    sentences = [match.group(0).strip() for match in SENTENCE_END.finditer(blocks[0])]
-    names = tuple(sorted({name.strip() for name in projects if name and name.strip()},
-                         key=len, reverse=True))
-    paragraphs, pending, grouped = [], [], False
+def _project_names(projects):
+    return tuple(sorted({name.strip() for name in projects if name and name.strip()},
+                        key=len, reverse=True))
+
+
+def _leading_project(text, names):
+    for name in names:
+        if text.startswith(name) and text[len(name):len(name) + 1] in PROJECT_BREAKS:
+            return name
+    return None
+
+
+def render_summary(text, projects=()):
+    """One bullet per sentence, with the leading project kept as a label."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    sentences = [match.group(0).strip() for line in lines for match in SENTENCE_END.finditer(line)]
+    if len(sentences) < 2 or MARKDOWN_SYNTAX.search(text):
+        return (f'<div class="markdown-body">{render_markdown(text, "summary")}</div>',
+                export_markdown(text, 'summary'))
+    names = _project_names(projects)
+    html, md = ['<ul class="summary-list">'], []
     for sentence in sentences:
-        if any(sentence.startswith(name) and sentence[len(name):len(name) + 1]
-               in {'', ' ', '：', ':', '，', ',', '、'} for name in names):
-            grouped = True
-            if pending:
-                paragraphs.append(''.join(pending))
-                pending = []
-            paragraphs.append(sentence)
+        name = _leading_project(sentence, names)
+        if name:
+            rest = sentence[len(name):]
+            html.append(f'<li><span class="summary-project">{escape(name)}</span>{escape(rest)}</li>')
+            md.append('- **' + literal_markdown(name) + '**' + rest)
         else:
-            pending.append(sentence)
-    if pending:
-        paragraphs.append(''.join(pending))
-    if not grouped:
-        # Without a recognisable project lead, keep short trailing notes with
-        # the sentence before them instead of starting a one-line paragraph.
-        merged = []
-        for sentence in sentences:
-            if merged and len(sentence) <= 24 and len(merged[-1]) <= 90:
-                merged[-1] += sentence
-            else:
-                merged.append(sentence)
-        return merged or blocks
-    return paragraphs or blocks
+            html.append(f'<li>{escape(sentence)}</li>')
+            md.append('- ' + sentence)
+    html.append('</ul>')
+    return '\n'.join(html), '\n'.join(md)
 
 
 def render_focus(focuses, advice=(), *, delivery=None):
@@ -214,10 +220,10 @@ def write_briefing(config, record):
         caveat += ' 来源采集未全部成功：' + '、'.join(unhealthy) + '。'
     projects = {project for task in tasks.values() for project in task.get('projects', [])}
     projects.update(item.get('project') for item in record['evidence'] if item.get('project'))
-    summary = '\n\n'.join(summary_paragraphs(result['summary'], projects))
+    summary_html, summary_md = render_summary(result['summary'], projects)
     md = ['---', 'type: morning-briefing', 'date: ' + day,
           'source_date: ' + record['source_day'], 'model: ' + json.dumps(record['model']), '---',
-          f'# {day} 晨报', '', export_markdown(summary, 'summary'), '', metadata, '', caveat, '']
+          f'# {day} 晨报', '', summary_md, '', metadata, '', caveat, '']
     interactive = day == local_day(config).isoformat()
     focuses = due_focuses(config, local_day(config)) if interactive else record.get('focuses', [])
     focus_html, focus_md = render_focus(focuses, result.get('focus_advice', []), delivery=day if interactive else None)
@@ -230,7 +236,7 @@ def write_briefing(config, record):
             '<span class="kicker">MORNING BRIEF</span></div>',
             f'<header class="lead-block"><h1><time datetime="{day}">{day}</time>'
             '<span class="h1-tail">，从昨天继续。</span></h1>',
-            f'<div class="summary markdown-body">{render_markdown(summary, "summary")}</div>'
+            f'<div class="summary">{summary_html}</div>'
             f'<div class="meta">{escape(metadata)}</div></header>', focus_html, '<div class="ledger">']
     for number, key in enumerate(('priorities', 'completed', 'progress', 'unfinished'), start=1):
         items = result[key]

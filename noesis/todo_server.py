@@ -3,6 +3,7 @@
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import re
 from pathlib import Path
 import secrets
 import sqlite3
@@ -14,9 +15,22 @@ from urllib.parse import parse_qs, urlsplit
 from .config import ConfigError
 from .projects import resolve_project
 from .todo import STATUSES, TAGS, change_todo, read_todos
+from .render.markdown import PLUGINS, BriefingRenderer
+from ._vendor.mistune import create_markdown
 from .todo_page import PAGE
 
 MAX_BODY = 64 * 1024
+DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
+FRONT_MATTER = re.compile(r'\A---\n.*?\n---\n', re.S)
+
+
+class DailyRenderer(BriefingRenderer):
+    def softbreak(self):
+        return '<br>\n'  # Match Obsidian: note/excerpt lines under a list item stay on their own lines.
+
+
+render_daily = create_markdown(renderer=DailyRenderer(escape=True), plugins=PLUGINS)
+WIKILINK = re.compile(r'\[\[([^\]|]+)(?:\|([^\]]*))?\]\]')
 
 
 class Board:
@@ -54,6 +68,20 @@ class Board:
         return {'todos': todos, 'folders': self._folder_info(paths), 'tags': TAGS, 'statuses': STATUSES,
                 'now': datetime.now(self.config.timezone).isoformat(timespec='seconds')}
 
+    def daily_days(self):
+        return sorted((path.stem for path in (self.config.root / 'daily').glob('*.md') if DAY.fullmatch(path.stem)),
+                      reverse=True)
+
+    def daily(self, day):
+        # The fixed pattern keeps lookups inside daily/; logs hold collected text, so render escaped.
+        path = self.config.root / 'daily' / f'{day}.md'
+        if not DAY.fullmatch(day) or not path.is_file():
+            raise ConfigError('没有这一天的日报。')
+        text = FRONT_MATTER.sub('', path.read_text())
+        # Obsidian links point at vault files the page cannot open; keep their labels.
+        text = WIKILINK.sub(lambda match: '📎 ' + (match.group(2) or Path(match.group(1)).stem), text)
+        return {'date': day, 'html': render_daily(text)}
+
     def _folder(self, body):
         item = next((item for item in read_todos(self.config) if item['id'] == body.get('id')), None)
         index = body.get('index')
@@ -80,6 +108,10 @@ class Board:
             route = (method, parsed.path)
             if route == ('GET', '/api/todos'):
                 result = self.snapshot()
+            elif route == ('GET', '/api/daily'):
+                result = {'days': self.daily_days()}
+            elif method == 'GET' and parsed.path.startswith('/api/daily/'):
+                result = self.daily(parsed.path.rsplit('/', 1)[1])
             elif route == ('POST', '/api/todos'):
                 result = change_todo(self.config, 'create', **data)
             elif method == 'PATCH' and parsed.path.startswith('/api/todos/'):

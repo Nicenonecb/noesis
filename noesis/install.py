@@ -113,14 +113,21 @@ def compile_morning(config,project):
 
 def todo_app():
     # ~/Applications is indexed by Spotlight and Launchpad without admin rights.
-    return Path.home()/'Applications/NOESIS 待办.app'
+    return Path.home()/'Applications/NOESIS.app'
+
+
+def remove_todo_app(app):
+    plist_path=app/'Contents/Info.plist'
+    if plist_path.exists() and plistlib.loads(plist_path.read_bytes()).get('CFBundleIdentifier')==TODO_ID:
+        shutil.rmtree(app)  # Never remove an unrelated app that happens to share the name.
 
 
 def compile_todo(config,project):
+    remove_todo_app(Path.home()/'Applications/NOESIS 待办.app')  # Name before the daily view was added.
     app=todo_app()
     private_directory(app/'Contents/MacOS')
-    info={'CFBundleIdentifier':TODO_ID,'CFBundleName':'NOESIS 待办',
-          'CFBundleDisplayName':'NOESIS 待办','CFBundleExecutable':'NOESISTodo',
+    info={'CFBundleIdentifier':TODO_ID,'CFBundleName':'NOESIS',
+          'CFBundleDisplayName':'NOESIS','CFBundleExecutable':'NOESISTodo',
           'CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.0','CFBundleVersion':'1',
           'NSHighResolutionCapable':True,'LSMinimumSystemVersion':'12.0',
           'NOESISExecutable':str(config.root/'bin/noesis'),'NOESISDataDirectory':str(config.root)}
@@ -194,17 +201,14 @@ def uninstall(config,*,load=True):
     for label in (*LABELS,MORNING_LABEL,INBOX_LABEL):
         if load:launchctl('bootout',domain+'/'+label,check=False)
         (Path.home()/'Library/LaunchAgents'/(label+'.plist')).unlink(missing_ok=True)
-    app=todo_app()
-    plist_path=app/'Contents/Info.plist'
-    if plist_path.exists() and plistlib.loads(plist_path.read_bytes()).get('CFBundleIdentifier')==TODO_ID:
-        shutil.rmtree(app)  # Never remove an unrelated app that happens to share the name.
+    remove_todo_app(todo_app())
     directory=Path.home()/'.hammerspoon';link=directory/'noesis.lua'
     if link.is_symlink() and link.resolve()==config.root/'run/noesis-hammerspoon.lua':link.unlink()
     init=directory/'init.lua'
     if init.exists():
         original=init.read_text();clean=strip_block(original)
         if clean!=original:atomic_write(init,clean)
-    return {'uninstalled':[*LABELS,MORNING_LABEL,'NOESIS 待办.app'],'data_preserved':True}
+    return {'uninstalled':[*LABELS,MORNING_LABEL,'NOESIS.app'],'data_preserved':True}
 
 
 def main():

@@ -1,13 +1,14 @@
 import AppKit
 import WebKit
 
-// Dock app for the todo board. The Python CLI owns data and serving; this window only hosts the page.
+// Dock app for the todo board and daily logs. The Python CLI owns data and serving; this window only hosts the page.
 final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var server: Process?
     private var board: URL?
     private var buffer = ""
+    private var titleObservation: NSKeyValueObservation?
     private let info = Bundle.main.infoDictionary ?? [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -20,9 +21,12 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
         view.uiDelegate = self
         view.loadHTMLString("<body style='font:13px -apple-system;color:#8f959e;padding:40px'>正在启动…</body>", baseURL: nil)
         webView = view
+        titleObservation = view.observe(\.title) { [weak self] view, _ in
+            if let title = view.title, !title.isEmpty { self?.window?.title = title }
+        }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "NOESIS 待办"
+        window.title = "NOESIS"
         window.contentView = view
         window.center()
         window.setFrameAutosaveName("NOESISTodoWindow")
@@ -36,8 +40,8 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
         // WKWebView text fields only get ⌘C/⌘V/⌘A/⌘Z through an Edit menu.
         let menu = NSMenu()
         let app = NSMenu()
-        app.addItem(withTitle: "隐藏 NOESIS 待办", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        app.addItem(withTitle: "退出 NOESIS 待办", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        app.addItem(withTitle: "隐藏 NOESIS", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "退出 NOESIS", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let edit = NSMenu(title: "编辑")
         edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
         edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
@@ -48,7 +52,7 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
         edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         let view = NSMenu(title: "显示")
         view.addItem(withTitle: "刷新", action: #selector(reload), keyEquivalent: "r")
-        for (title, submenu) in [("NOESIS 待办", app), ("编辑", edit), ("显示", view)] {
+        for (title, submenu) in [("NOESIS", app), ("编辑", edit), ("显示", view)] {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.submenu = submenu
             menu.addItem(item)
@@ -92,7 +96,7 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
         guard server != nil else { return }
         server = nil
         let alert = NSAlert()
-        alert.messageText = "待办服务已停止"
+        alert.messageText = "NOESIS 本机服务已停止"
         alert.informativeText = "请重新运行 scripts/install.sh 更新运行包，或运行 noesis doctor 检查数据目录。"
         alert.runModal()
         NSApp.terminate(nil)

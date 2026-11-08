@@ -5,7 +5,7 @@ PAGE = r'''<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NOESIS 待办</title>
+<title>NOESIS · 待办</title>
 <style>
 :root {
   --text: #1f2329; --text-2: #646a73; --text-3: #8f959e; --line: #dee0e3; --line-2: #eff0f1;
@@ -29,7 +29,43 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .btn.primary:hover { background: #4e83fd; }
 .btn.danger { color: var(--red); }
 .btn[hidden] { display: none; }
-.wrap { overflow: auto; height: calc(100vh - 53px); padding: 0 0 40px; }
+.wrap { flex: 1; min-height: 0; overflow: auto; padding: 0 0 40px; }
+.app { display: flex; height: 100vh; }
+.side { width: 216px; flex: none; background: #f5f6f7; border-right: 1px solid var(--line); padding: 14px 8px;
+  display: flex; flex-direction: column; gap: 2px; }
+.brand { font-size: 15px; font-weight: 600; padding: 2px 10px 16px; letter-spacing: .5px; }
+.brand small { color: var(--text-3); font-weight: 400; margin-left: 6px; font-size: 12px; }
+.nav { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 10px; border-radius: 6px;
+  color: var(--text); text-align: left; }
+.nav svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.nav:hover { background: #e9eaec; }
+.nav.active { background: var(--blue-bg); color: var(--blue); font-weight: 500; }
+.nav .badge { margin-left: auto; color: var(--text-3); font-size: 12px; font-weight: 400; }
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view[hidden] { display: none; }
+.daily { flex: 1; min-height: 0; display: flex; }
+.days { width: 196px; flex: none; border-right: 1px solid var(--line-2); overflow: auto; padding: 4px 8px 24px; }
+.month { color: var(--text-3); font-size: 12px; padding: 12px 10px 4px; }
+.day { display: flex; justify-content: space-between; width: 100%; padding: 7px 10px; border-radius: 6px; }
+.day:hover { background: var(--bg-hover); }
+.day.active { background: var(--blue-bg); color: var(--blue); }
+.day .week { color: var(--text-3); font-size: 12px; }
+.doc { flex: 1; min-width: 0; overflow: auto; padding: 24px 48px 80px; }
+.doc article { max-width: 880px; margin: 0 auto; font-size: 14px; line-height: 1.75; }
+.doc h1 { font-size: 22px; margin: 0 0 16px; }
+.doc h2 { font-size: 17px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-2); }
+.doc h3 { font-size: 15px; margin: 22px 0 8px; }
+.doc h4 { font-size: 14px; margin: 16px 0 6px; color: var(--text-2); }
+.doc ul { padding-left: 22px; margin: 6px 0; }
+.doc a { color: var(--blue); text-decoration: none; }
+.doc a:hover { text-decoration: underline; }
+.doc code { background: #f2f3f5; border-radius: 4px; padding: 1px 4px; font-size: 12.5px; }
+.doc pre { background: #f5f6f7; border-radius: 6px; padding: 10px 12px; overflow: auto; }
+.doc table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+.doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.doc th { background: #f5f6f7; font-weight: 500; }
+.doc .empty-board { padding-top: 120px; }
 .grid { display: inline-block; min-width: 100%; }
 .row { display: flex; min-height: var(--row); }
 .cell { flex: none; border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2);
@@ -108,6 +144,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 </style>
 </head>
 <body>
+<div class="app">
+<nav class="side">
+  <div class="brand">NOESIS<small>求是</small></div>
+  <button class="nav" data-view="todo"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M5 8.2l2 2 4-4.2"/></svg>待办<span class="badge" id="todo-count"></span></button>
+  <button class="nav" data-view="daily"><svg viewBox="0 0 16 16"><rect x="2.5" y="1.5" width="11" height="13" rx="2"/><path d="M5 5h6M5 8h6M5 11h3.5"/></svg>日报<span class="badge" id="daily-count"></span></button>
+</nav>
+<main>
+<section class="view" id="view-todo">
 <div class="top">
   <h1>待办</h1><span class="sub">NOESIS · 本机保存，可关联文件夹</span>
   <span class="spacer"></span>
@@ -116,6 +160,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   <button class="btn primary" id="create">＋ 新建任务</button>
 </div>
 <div class="wrap" id="wrap"><div class="grid" id="grid"></div></div>
+</section>
+<section class="view" id="view-daily" hidden>
+<div class="top"><h1>日报</h1><span class="sub">NOESIS · 每日活动日志</span></div>
+<div class="daily"><div class="days" id="days"></div><div class="doc" id="doc"></div></div>
+</section>
+</main>
+</div>
 <script>
 'use strict';
 const TOKEN = '__TOKEN__';
@@ -308,6 +359,7 @@ function render() {
     group.append(head, rows);
     grid.append(group);
   }
+  document.getElementById('todo-count').textContent = state.todos.filter(t => t.status !== 'done').length || '';
   if (!state.todos.length) grid.append(el('div', 'empty-board', '还没有任务。点击右上角「新建任务」，或在分组底部点击 ＋。'));
 }
 
@@ -386,8 +438,67 @@ document.getElementById('create').onclick = () => createIn('todo');
 document.getElementById('bulk').onclick = () => remove([...selected]);
 document.getElementById('search').oninput = render;
 document.getElementById('wrap').addEventListener('scroll', closeFloating);
-window.addEventListener('focus', () => { if (!document.querySelector('.editor, .menu')) load(); });
+const WEEK = '日一二三四五六';
+let days = [];
+let currentDay = null;
+async function loadDays() {
+  try { days = (await api('GET', '/api/daily')).days; } catch (error) { toast(error.message); return; }
+  document.getElementById('daily-count').textContent = days.length || '';
+  const list = document.getElementById('days');
+  list.replaceChildren();
+  let month = '';
+  for (const value of days) {
+    const [y, m, d] = value.split('-');
+    if (y + m !== month) { month = y + m; list.append(el('div', 'month', y + ' 年 ' + Number(m) + ' 月')); }
+    const button = el('button', 'day' + (value === currentDay ? ' active' : ''));
+    button.append(el('span', '', Number(m) + ' 月 ' + Number(d) + ' 日'),
+      el('span', 'week', '周' + WEEK[new Date(Number(y), Number(m) - 1, Number(d)).getDay()]));
+    button.onclick = () => { location.hash = 'daily/' + value; };
+    list.append(button);
+  }
+}
+async function openDay(value) {
+  const doc = document.getElementById('doc');
+  if (!value) { doc.replaceChildren(el('div', 'empty-board', '还没有日报。运行 noesis build-daily 或等待后台任务生成。')); return; }
+  currentDay = value;
+  document.querySelectorAll('.day').forEach(node => node.classList.remove('active'));
+  try {
+    const result = await api('GET', '/api/daily/' + value);
+    // Server output is escaped Markdown that only keeps http(s) links.
+    const article = el('article'); article.innerHTML = result.html;
+    article.querySelectorAll('a[href^="http"]').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+    doc.replaceChildren(article); doc.scrollTop = 0;
+  } catch (error) { doc.replaceChildren(el('div', 'empty-board', error.message)); }
+  await loadDays();
+}
+async function route() {
+  const [view, day] = location.hash.slice(1).split('/');
+  const name = view === 'daily' ? 'daily' : 'todo';
+  closeFloating();
+  document.getElementById('view-todo').hidden = name !== 'todo';
+  document.getElementById('view-daily').hidden = name !== 'daily';
+  document.querySelectorAll('.nav').forEach(node => node.classList.toggle('active', node.dataset.view === name));
+  document.title = 'NOESIS · ' + (name === 'daily' ? '日报' : '待办');
+  try { store.setItem('noesis.view', name); } catch (e) {}
+  if (name === 'daily') {
+    if (!days.length) await loadDays();
+    const wanted = /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? day : (currentDay || days[0]);
+    if (wanted !== day && wanted) { history.replaceState(null, '', '#daily/' + wanted); }
+    await openDay(wanted);
+  }
+}
+document.querySelectorAll('.nav').forEach(node => node.onclick = () => {
+  location.hash = node.dataset.view === 'daily' ? 'daily' + (currentDay ? '/' + currentDay : '') : 'todo';
+});
+window.addEventListener('hashchange', route);
+window.addEventListener('focus', () => {
+  if (!document.querySelector('.editor, .menu')) load();
+  loadDays();
+});
+if (!location.hash) { try { if (store.getItem('noesis.view') === 'daily') history.replaceState(null, '', '#daily'); } catch (e) {} }
 load();
+loadDays();
+route();
 </script>
 </body>
 </html>

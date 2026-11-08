@@ -66,8 +66,12 @@ def test_installer_is_idempotent_and_uninstall_preserves_data(tmp_path,monkeypat
     monkeypatch.setattr(Path,'home',classmethod(lambda cls:home))
     config=initialize(tmp_path/'data');project=Path(__file__).resolve().parents[1]
     hs=home/'.hammerspoon';hs.mkdir();(hs/'init.lua').write_text('-- user setting\ncustom = true\n')
+    import plistlib
+    old_app=home/'Applications/NOESIS 待办.app/Contents';old_app.mkdir(parents=True)
+    (old_app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.justin.noesis.todo'}))
     monkeypatch.setattr('noesis.install.subprocess.run',lambda *args,**kw:SimpleNamespace(returncode=0,stdout=''))
     install(config,project,load=False)
+    assert not old_app.exists()
     init=(hs/'init.lua').read_text();assert init.count('require("noesis")')==1 and 'custom = true' in init
     plists={label:(home/'Library/LaunchAgents'/f'{label}.plist').read_bytes() for label in LABELS}
     install(config,project,load=False)
@@ -77,10 +81,10 @@ def test_installer_is_idempotent_and_uninstall_preserves_data(tmp_path,monkeypat
     daily=plistlib.loads(plists[LABELS[1]])
     assert daily['StartCalendarInterval']=={'Hour':23,'Minute':30}
     assert 'daily-run' in daily['ProgramArguments'] and Path(daily['ProgramArguments'][0]).is_absolute()
-    todo_info=plistlib.loads((home/'Applications/NOESIS 待办.app/Contents/Info.plist').read_bytes())
+    todo_info=plistlib.loads((home/'Applications/NOESIS.app/Contents/Info.plist').read_bytes())
     assert todo_info['NOESISDataDirectory']==str(config.root) and todo_info['NOESISExecutable']==str(config.root/'bin/noesis')
     uninstall(config,load=False)
-    assert not (home/'Applications/NOESIS 待办.app').exists()
+    assert not (home/'Applications/NOESIS.app').exists()
     assert config.db_path.exists() and 'custom = true' in (hs/'init.lua').read_text()
     assert not (hs/'noesis.lua').exists()
     uninstall(config,load=False)

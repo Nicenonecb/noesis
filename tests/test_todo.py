@@ -111,3 +111,20 @@ def test_server_exits_when_app_closes_stdin(config, monkeypatch, capsys):
     monkeypatch.setattr(todo_server.sys, 'stdin', io.StringIO(''))
     assert todo_server.serve(config, open_browser=False, exit_on_stdin_eof=True) == 0
     assert 'http://127.0.0.1:' in capsys.readouterr().out
+
+
+def test_daily_list_and_render_are_escaped_and_confined(config):
+    daily = config.root / 'daily'
+    daily.mkdir(exist_ok=True)
+    (daily / '2026-11-08.md').write_text('---\ndate: 2026-11-08\n---\n# 日志\n\n- 09:10 [[captures/a.md|参考资料]]\n'
+                                         '  备注：保留\n\n<script>alert(1)</script>\n\n[外链](https://example.invalid)\n')
+    (daily / '2026-11-09.md').write_text('# 今天\n')
+    (daily / 'notes.md').write_text('# 不是日报\n')
+    board = Board(config, 8765)
+    assert json.loads(request(board, 'GET', '/api/daily')[1]) == {'days': ['2026-11-09', '2026-11-08']}
+    status, payload = request(board, 'GET', '/api/daily/2026-11-08')
+    html = json.loads(payload)['html']
+    assert status == 200 and 'date:' not in html and '📎 参考资料' in html and '[[' not in html
+    assert '<br>' in html and '<script>' not in html and 'href="https://example.invalid"' in html
+    for bad in ('notes', '..%2Fconfig', '2026-11-07'):
+        assert request(board, 'GET', f'/api/daily/{bad}')[0] == 400

@@ -128,3 +128,18 @@ def test_daily_list_and_render_are_escaped_and_confined(config):
     assert '<br>' in html and '<script>' not in html and 'href="https://example.invalid"' in html
     for bad in ('notes', '..%2Fconfig', '2026-11-07'):
         assert request(board, 'GET', f'/api/daily/{bad}')[0] == 400
+
+
+def test_daily_restores_flattened_message_markdown():
+    from noesis.todo_server import render_daily
+    html = render_daily('#### Codex · 09:00 · 《请实现 ⏎ 日志》\n\n'
+                        '- 👤 11:47 帮我规划 ⏎ 谢谢\n'
+                        '- 🤖 ## 方案 ⏎ ⏎ **先去**。 ⏎ ⏎ | 时间 | 安排 | ⏎ |---|---| ⏎ | 12:30 | 出发 | ⏎ ⏎ - 一 ⏎ - 二\n'
+                        '- 🤖 截断 ⏎ ʼʼʼ ⏎ x = 1…\n'
+                        '- 👤 11:48 下一条\n')
+    assert '⏎' not in html and 'ʼʼʼ' not in html
+    assert '<h4>Codex · 09:00 · 《请实现 日志》</h4>' in html
+    assert '<h2>方案</h2>' in html and '<strong>先去</strong>' in html and '<td>12:30</td>' in html
+    assert '<li>一</li>' in html and '<pre><code>x = 1…' in html
+    # A truncated code fence stays inside its own item instead of swallowing the next message.
+    assert '<p>👤 11:48 下一条</p>' in html

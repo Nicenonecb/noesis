@@ -17,6 +17,7 @@ from .projects import resolve_project
 from .todo import STATUSES, TAGS, change_todo, read_todos
 from .render.markdown import PLUGINS, BriefingRenderer
 from ._vendor.mistune import create_markdown
+from ._vendor.mistune.plugins.table import table_in_list
 from .todo_page import PAGE
 
 MAX_BODY = 64 * 1024
@@ -29,7 +30,25 @@ class DailyRenderer(BriefingRenderer):
         return '<br>\n'  # Match Obsidian: note/excerpt lines under a list item stay on their own lines.
 
 
-render_daily = create_markdown(renderer=DailyRenderer(escape=True), plugins=PLUGINS)
+_render = create_markdown(renderer=DailyRenderer(escape=True), plugins=[*PLUGINS, table_in_list])
+FLAT = re.compile(r'^(?P<lead>[ \t]*(?:- )?)(?P<tag>👤 \d{2}:\d{2} |🤖 |备注：|摘录：)(?P<body>.*⏎.*)$', re.M)
+BLOCK = re.compile(r'(#{1,6} |\||[-*+] |>|\d+\. |```)')
+
+
+def _unflatten(match):
+    # daily.py folds each message onto one line (⏎ for newlines, ʼʼʼ for fences) so
+    # Obsidian keeps the list intact; the viewer restores it as Markdown nested in the item.
+    pad = ' ' * len(match['lead'].expandtabs())
+    lines = match['body'].replace('ʼʼʼ', '```').replace(' ⏎ ', '\n').replace('⏎', '\n').split('\n')
+    head = match['lead'] + match['tag'].rstrip()
+    if lines and not BLOCK.match(lines[0]):
+        head += ' ' + lines.pop(0)
+    return head + ('\n' + '\n'.join(pad + line if line else pad for line in lines) if lines else '')
+
+
+def render_daily(text):
+    # What remains are session-title headings, which must stay on one line.
+    return _render(FLAT.sub(_unflatten, text).replace(' ⏎ ', ' '))
 WIKILINK = re.compile(r'\[\[([^\]|]+)(?:\|([^\]]*))?\]\]')
 
 

@@ -66,6 +66,10 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
 .doc th { background: #f5f6f7; font-weight: 500; }
 .doc .empty-board { padding-top: 120px; }
+.doc li h1, .doc li h2, .doc li h3, .doc li h4, .doc li h5, .doc li h6 { font-size: 14px; margin: 10px 0 4px; padding: 0; border: 0; color: var(--text); }
+.doc li p { margin: 4px 0; }
+.doc li table { margin: 6px 0; }
+.doc li pre { margin: 6px 0; }
 .grid { display: inline-block; min-width: 100%; }
 .row { display: flex; min-height: var(--row); }
 .cell { flex: none; border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2);

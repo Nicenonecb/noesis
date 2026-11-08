@@ -77,7 +77,10 @@ def test_installer_is_idempotent_and_uninstall_preserves_data(tmp_path,monkeypat
     daily=plistlib.loads(plists[LABELS[1]])
     assert daily['StartCalendarInterval']=={'Hour':23,'Minute':30}
     assert 'daily-run' in daily['ProgramArguments'] and Path(daily['ProgramArguments'][0]).is_absolute()
+    todo_info=plistlib.loads((home/'Applications/NOESIS 待办.app/Contents/Info.plist').read_bytes())
+    assert todo_info['NOESISDataDirectory']==str(config.root) and todo_info['NOESISExecutable']==str(config.root/'bin/noesis')
     uninstall(config,load=False)
+    assert not (home/'Applications/NOESIS 待办.app').exists()
     assert config.db_path.exists() and 'custom = true' in (hs/'init.lua').read_text()
     assert not (hs/'noesis.lua').exists()
     uninstall(config,load=False)

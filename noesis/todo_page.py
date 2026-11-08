@@ -266,7 +266,7 @@ function folderCell(item) {
   });
   const add = el('button', 'add-folder', '＋'); add.title = '关联文件夹';
   add.onclick = async () => {
-    const picked = await act('POST', '/api/pick-folder', {});
+    const picked = await pickFolder();
     if (picked && picked.status === 'picked') act('PATCH', '/api/todos/' + item.id, {folders: [...item.folders, picked.path]});
   };
   cell.append(list, add);
@@ -311,6 +311,12 @@ function render() {
   if (!state.todos.length) grid.append(el('div', 'empty-board', '还没有任务。点击右上角「新建任务」，或在分组底部点击 ＋。'));
 }
 
+function pickFolder() {
+  // Inside the NOESIS app the native panel answers; a plain browser falls back to the server's chooser.
+  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.noesis;
+  if (!bridge) return act('POST', '/api/pick-folder', {});
+  return new Promise(resolve => { window.noesisPicked = resolve; bridge.postMessage({action: 'pickFolder'}); });
+}
 async function createIn(status) {
   folded.delete(status); remember('noesis.todo.folded', folded);
   const made = await act('POST', '/api/todos', {status});

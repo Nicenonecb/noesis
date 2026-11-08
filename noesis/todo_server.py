@@ -7,6 +7,8 @@ from pathlib import Path
 import secrets
 import sqlite3
 import subprocess
+import sys
+import threading
 from urllib.parse import parse_qs, urlsplit
 
 from .config import ConfigError
@@ -110,7 +112,7 @@ def pick_folder():
     return {'status': 'picked', 'path': result.stdout.strip().rstrip('/') or '/'}
 
 
-def serve(config, *, port=0, open_browser=True):
+def serve(config, *, port=0, open_browser=True, exit_on_stdin_eof=False):
     class Handler(BaseHTTPRequestHandler):
         def _respond(self):
             length = int(self.headers.get('Content-Length') or 0)
@@ -136,6 +138,9 @@ def serve(config, *, port=0, open_browser=True):
     print(f'NOESIS 待办已启动：{board.url}\n按 Ctrl+C 停止。', flush=True)
     if open_browser:
         subprocess.run(['open', board.url], check=False)
+    if exit_on_stdin_eof:
+        # The desktop app holds stdin open; when it quits or crashes the server follows.
+        threading.Thread(target=lambda: (sys.stdin.read(), server.shutdown()), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -104,3 +104,10 @@ def test_cli_add_and_list(config, tmp_path, capsys):
     assert main(['--data-dir', str(config.root), 'todo', 'list']) == 0
     listed = json.loads(capsys.readouterr().out)
     assert listed[0]['title'] == '整理文稿' and listed[0]['folders'] == [str(folder.resolve())]
+
+
+def test_server_exits_when_app_closes_stdin(config, monkeypatch, capsys):
+    import io
+    monkeypatch.setattr(todo_server.sys, 'stdin', io.StringIO(''))
+    assert todo_server.serve(config, open_browser=False, exit_on_stdin_eof=True) == 0
+    assert 'http://127.0.0.1:' in capsys.readouterr().out

@@ -105,6 +105,7 @@ def parser() -> argparse.ArgumentParser:
     todo.add_argument('--data-dir', type=Path, default=argparse.SUPPRESS)
     todo.add_argument('--port', type=int, default=0, help='监听 127.0.0.1 的端口，默认随机')
     todo.add_argument('--no-open', action='store_true', help='不自动打开浏览器')
+    todo.add_argument('--exit-on-stdin-eof', action='store_true', help=argparse.SUPPRESS)
     todo_actions = todo.add_subparsers(dest='action')
     todo_actions.add_parser('serve', help='启动本机表格页面（默认）')
     todo_actions.add_parser('list')
@@ -163,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             from .todo import change_todo, read_todos
             if args.action in {None, 'serve'}:
                 from .todo_server import serve
-                return serve(config, port=args.port, open_browser=not args.no_open)
+                return serve(config, port=args.port, open_browser=not args.no_open, exit_on_stdin_eof=args.exit_on_stdin_eof)
             if args.action == 'list':
                 result = read_todos(config)
             else:

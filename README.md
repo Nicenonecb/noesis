@@ -122,6 +122,10 @@ Safari 历史采集需要完全磁盘访问权限，可用 `noesis doctor` 检�
 
 ## 待办表格
 
+运行 `scripts/install.sh` 后，`~/Applications/NOESIS 待办.app` 可从启动台、聚焦搜索或程序坞打开。
+应用自行启动本机服务，退出（或意外退出）时服务随之停止；关联文件夹使用系统原生选择框。
+也可以不安装应用，直接在命令行使用：
+
 ```sh
 noesis todo                 # 启动本机页面并在浏览器打开，Ctrl+C 停止
 noesis todo --port 8765     # 固定端口；--no-open 只打印地址

@@ -10,6 +10,7 @@ import plistlib
 import re
 import subprocess
 import shlex
+import shutil
 import sys
 import zipfile
 
@@ -19,6 +20,7 @@ from .files import atomic_write
 LABELS=('com.justin.noesis.collect','com.justin.noesis.daily')
 MORNING_LABEL='com.justin.noesis.morning'
 INBOX_LABEL='com.justin.noesis.inbox'
+TODO_ID='com.justin.noesis.todo'
 BEGIN='-- BEGIN NOESIS'
 END='-- END NOESIS'
 
@@ -109,6 +111,27 @@ def compile_morning(config,project):
                     '-f',str(app)],check=True,capture_output=True,timeout=30)
 
 
+def todo_app():
+    # ~/Applications is indexed by Spotlight and Launchpad without admin rights.
+    return Path.home()/'Applications/NOESIS 待办.app'
+
+
+def compile_todo(config,project):
+    app=todo_app()
+    private_directory(app/'Contents/MacOS')
+    info={'CFBundleIdentifier':TODO_ID,'CFBundleName':'NOESIS 待办',
+          'CFBundleDisplayName':'NOESIS 待办','CFBundleExecutable':'NOESISTodo',
+          'CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.0','CFBundleVersion':'1',
+          'NSHighResolutionCapable':True,'LSMinimumSystemVersion':'12.0',
+          'NOESISExecutable':str(config.root/'bin/noesis'),'NOESISDataDirectory':str(config.root)}
+    atomic_write(app/'Contents/Info.plist',plistlib.dumps(info))
+    subprocess.run(['swiftc','-O',str(project/'noesis/todo_app.swift'),'-o',str(app/'Contents/MacOS/NOESISTodo')],
+                   check=True,capture_output=True,timeout=120)
+    subprocess.run(['codesign','--force','--sign','-',str(app)],check=True,capture_output=True,timeout=30)
+    subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+                    '-f',str(app)],check=True,capture_output=True,timeout=30)
+
+
 def strip_block(text):
     return re.sub(r'(?m)^-- BEGIN NOESIS\n.*?^-- END NOESIS\n?','',text,flags=re.S)
 
@@ -147,6 +170,7 @@ def install(config,project,*,load=True):
                    check=True,capture_output=True,timeout=120)
     configure_hammerspoon(config,project)
     if config.values['digest']['enabled']:compile_morning(config,project)
+    compile_todo(config,project)
     agents=Path.home()/'Library/LaunchAgents';private_directory(agents)
     if not config.values['digest']['enabled']:
         (agents/(MORNING_LABEL+'.plist')).unlink(missing_ok=True)
@@ -170,13 +194,17 @@ def uninstall(config,*,load=True):
     for label in (*LABELS,MORNING_LABEL,INBOX_LABEL):
         if load:launchctl('bootout',domain+'/'+label,check=False)
         (Path.home()/'Library/LaunchAgents'/(label+'.plist')).unlink(missing_ok=True)
+    app=todo_app()
+    plist_path=app/'Contents/Info.plist'
+    if plist_path.exists() and plistlib.loads(plist_path.read_bytes()).get('CFBundleIdentifier')==TODO_ID:
+        shutil.rmtree(app)  # Never remove an unrelated app that happens to share the name.
     directory=Path.home()/'.hammerspoon';link=directory/'noesis.lua'
     if link.is_symlink() and link.resolve()==config.root/'run/noesis-hammerspoon.lua':link.unlink()
     init=directory/'init.lua'
     if init.exists():
         original=init.read_text();clean=strip_block(original)
         if clean!=original:atomic_write(init,clean)
-    return {'uninstalled':list((*LABELS,MORNING_LABEL)),'data_preserved':True}
+    return {'uninstalled':[*LABELS,MORNING_LABEL,'NOESIS 待办.app'],'data_preserved':True}
 
 
 def main():

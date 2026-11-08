@@ -101,6 +101,18 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument('--outcome', choices=['done', 'missed', 'snoozed'], required=True)
             command.add_argument('--note', default='')
             command.add_argument('--until', help='延后到 YYYY-MM-DD，默认明天')
+    todo = sub.add_parser('todo', help='打开本机待办表格，可为任务关联文件夹')
+    todo.add_argument('--data-dir', type=Path, default=argparse.SUPPRESS)
+    todo.add_argument('--port', type=int, default=0, help='监听 127.0.0.1 的端口，默认随机')
+    todo.add_argument('--no-open', action='store_true', help='不自动打开浏览器')
+    todo_actions = todo.add_subparsers(dest='action')
+    todo_actions.add_parser('serve', help='启动本机表格页面（默认）')
+    todo_actions.add_parser('list')
+    add_todo = todo_actions.add_parser('add')
+    add_todo.add_argument('title')
+    add_todo.add_argument('--tag', choices=['urgent_important', 'important', 'urgent', 'neither'])
+    add_todo.add_argument('--category', default='')
+    add_todo.add_argument('--folder', action='append', default=[], help='关联文件夹，可重复')
     digest=sub.add_parser('digest',help='用 DeepSeek 生成指定完整日期的晨报')
     digest.add_argument('--data-dir',type=Path,default=argparse.SUPPRESS)
     digest.add_argument('--date',default='yesterday')
@@ -145,6 +157,18 @@ def main(argv: list[str] | None = None) -> int:
                 result = change_focus(config, args.action, identity=getattr(args, 'id', None), **fields)
                 # No model request: refresh today's local reminder after feedback.
                 result['path'] = refresh_focus(config)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.command == 'todo':
+            from .todo import change_todo, read_todos
+            if args.action in {None, 'serve'}:
+                from .todo_server import serve
+                return serve(config, port=args.port, open_browser=not args.no_open)
+            if args.action == 'list':
+                result = read_todos(config)
+            else:
+                result = change_todo(config, 'create', title=args.title, tag=args.tag, category=args.category,
+                                     folders=[str(Path(path).expanduser().resolve()) for path in args.folder])
             print(json.dumps(result, ensure_ascii=False))
             return 0
         if args.command in {'digest','digest-key','digest-check','morning-run','morning-ack'}:

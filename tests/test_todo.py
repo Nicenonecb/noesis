@@ -143,3 +143,15 @@ def test_daily_restores_flattened_message_markdown():
     assert '<li>一</li>' in html and '<pre><code>x = 1…' in html
     # A truncated code fence stays inside its own item instead of swallowing the next message.
     assert '<p>👤 11:48 下一条</p>' in html
+
+
+def test_prefs_persist_in_data_dir_and_reject_unknown_values(config):
+    board = Board(config, 8765)
+    assert json.loads(request(board, 'GET', '/api/prefs')[1]) == {'lang': 'zh', 'view': 'todo', 'folded': ['done'], 'expanded': []}
+    assert request(board, 'PUT', '/api/prefs', {'lang': 'en', 'folded': []})[0] == 200
+    # A new board (new port after an app restart) still sees the saved choices.
+    again = Board(config, 9999)
+    assert json.loads(request(again, 'GET', '/api/prefs')[1])['lang'] == 'en'
+    for bad in ({'lang': 'fr'}, {'view': 'admin'}, {'folded': ['archived']}, {'expanded': ['x' * 40]}, {'theme': 'dark'}):
+        assert request(board, 'PUT', '/api/prefs', bad)[0] == 400
+    assert stat.S_IMODE((config.root / 'ui.json').stat().st_mode) == 0o600

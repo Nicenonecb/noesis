@@ -9,6 +9,8 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
     private var board: URL?
     private var buffer = ""
     private var titleObservation: NSKeyValueObservation?
+    private var english = false
+    private func text(_ zh: String, _ en: String) -> String { english ? en : zh }
     private let info = Bundle.main.infoDictionary ?? [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -40,19 +42,19 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
         // WKWebView text fields only get ⌘C/⌘V/⌘A/⌘Z through an Edit menu.
         let menu = NSMenu()
         let app = NSMenu()
-        app.addItem(withTitle: "隐藏 NOESIS", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        app.addItem(withTitle: "退出 NOESIS", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        let edit = NSMenu(title: "编辑")
-        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        app.addItem(withTitle: text("隐藏 NOESIS", "Hide NOESIS"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: text("退出 NOESIS", "Quit NOESIS"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let edit = NSMenu(title: text("编辑", "Edit"))
+        edit.addItem(withTitle: text("撤销", "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: text("重做", "Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        let view = NSMenu(title: "显示")
-        view.addItem(withTitle: "刷新", action: #selector(reload), keyEquivalent: "r")
-        for (title, submenu) in [("NOESIS", app), ("编辑", edit), ("显示", view)] {
+        edit.addItem(withTitle: text("剪切", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: text("拷贝", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: text("粘贴", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: text("全选", "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let view = NSMenu(title: text("显示", "View"))
+        view.addItem(withTitle: text("刷新", "Reload"), action: #selector(reload), keyEquivalent: "r")
+        for (title, submenu) in [("NOESIS", app), (edit.title, edit), (view.title, view)] {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.submenu = submenu
             menu.addItem(item)
@@ -96,8 +98,9 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
         guard server != nil else { return }
         server = nil
         let alert = NSAlert()
-        alert.messageText = "NOESIS 本机服务已停止"
-        alert.informativeText = "请重新运行 scripts/install.sh 更新运行包，或运行 noesis doctor 检查数据目录。"
+        alert.messageText = text("NOESIS 本机服务已停止", "The NOESIS local service stopped")
+        alert.informativeText = text("请重新运行 scripts/install.sh 更新运行包，或运行 noesis doctor 检查数据目录。",
+                                     "Re-run scripts/install.sh to update the runtime, or run noesis doctor to check the data directory.")
         alert.runModal()
         NSApp.terminate(nil)
     }
@@ -124,8 +127,8 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         let alert = NSAlert()
         alert.messageText = message
-        alert.addButton(withTitle: "确定")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: text("确定", "OK"))
+        alert.addButton(withTitle: text("取消", "Cancel"))
         completionHandler(alert.runModal() == .alertFirstButtonReturn)
     }
 
@@ -139,13 +142,19 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, board != nil, let window = window,
-              (message.body as? [String: Any])?["action"] as? String == "pickFolder" else { return }
+              let body = message.body as? [String: Any] else { return }
+        if body["action"] as? String == "language", let lang = body["lang"] as? String {
+            english = lang == "en"
+            NSApp.mainMenu = mainMenu()
+            return
+        }
+        guard body["action"] as? String == "pickFolder" else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "关联"
-        panel.message = "选择要关联的文件夹"
+        panel.prompt = text("关联", "Link")
+        panel.message = text("选择要关联的文件夹", "Choose a folder to link")
         panel.beginSheetModal(for: window) { [weak self] response in
             var result: [String: Any] = ["status": "cancelled"]
             if response == .OK, let url = panel.url { result = ["status": "picked", "path": url.path] }

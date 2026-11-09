@@ -13,6 +13,8 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 
 from .config import ConfigError
+from .files import atomic_write
+from .runtime import file_lock
 from .projects import resolve_project
 from .todo import STATUSES, TAGS, change_todo, read_todos
 from .render.markdown import PLUGINS, BriefingRenderer
@@ -21,6 +23,7 @@ from ._vendor.mistune.plugins.table import table_in_list
 from .todo_page import PAGE
 
 MAX_BODY = 64 * 1024
+DEFAULT_PREFS = {'lang': 'zh', 'view': 'todo', 'folded': ['done'], 'expanded': []}
 DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 FRONT_MATTER = re.compile(r'\A---\n.*?\n---\n', re.S)
 
@@ -101,6 +104,25 @@ class Board:
         text = WIKILINK.sub(lambda match: '📎 ' + (match.group(2) or Path(match.group(1)).stem), text)
         return {'date': day, 'html': render_daily(text)}
 
+    def prefs(self):
+        path = self.config.root / 'ui.json'
+        stored = json.loads(path.read_text()) if path.exists() else {}
+        return DEFAULT_PREFS | {key: value for key, value in stored.items() if key in DEFAULT_PREFS}
+
+    def save_prefs(self, changes):
+        """Interface choices live in the data dir: the app's loopback origin changes port every launch."""
+        checks = {'lang': lambda v: v in ('zh', 'en'), 'view': lambda v: v in ('todo', 'daily', 'settings'),
+                  'folded': lambda v: isinstance(v, list) and set(v) <= set(STATUSES),
+                  'expanded': lambda v: isinstance(v, list) and len(v) <= 500
+                  and all(isinstance(i, str) and len(i) <= 32 for i in v)}
+        for key, value in changes.items():
+            if key not in checks or not checks[key](value):
+                raise ConfigError(f'界面设置 {key} 无效。')
+        with file_lock(self.config.root / 'run/ui.lock'):
+            merged = self.prefs() | changes
+            atomic_write(self.config.root / 'ui.json', json.dumps(merged, ensure_ascii=False, indent=2) + '\n')
+        return merged
+
     def _folder(self, body):
         item = next((item for item in read_todos(self.config) if item['id'] == body.get('id')), None)
         index = body.get('index')
@@ -127,6 +149,10 @@ class Board:
             route = (method, parsed.path)
             if route == ('GET', '/api/todos'):
                 result = self.snapshot()
+            elif route == ('GET', '/api/prefs'):
+                result = self.prefs()
+            elif route == ('PUT', '/api/prefs'):
+                result = self.save_prefs(data)
             elif route == ('GET', '/api/daily'):
                 result = {'days': self.daily_days()}
             elif method == 'GET' and parsed.path.startswith('/api/daily/'):
@@ -179,7 +205,7 @@ def serve(config, *, port=0, open_browser=True, exit_on_stdin_eof=False):
             self.end_headers()
             self.wfile.write(payload)
 
-        do_GET = do_POST = do_PATCH = _respond
+        do_GET = do_POST = do_PATCH = do_PUT = _respond
 
         def log_message(self, *args):
             pass  # Request lines carry the token; keep them out of terminals and logs.

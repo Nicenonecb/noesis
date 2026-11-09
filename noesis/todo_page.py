@@ -27,7 +27,12 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .nav svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .nav:hover { background: #e9eaec; }
 .nav.active { background: var(--blue-bg); color: var(--blue); font-weight: 500; }
-.nav .badge { margin-left: auto; color: var(--text-3); font-size: 12px; font-weight: 400; }
+.nav .badge { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 9px; line-height: 18px; text-align: center;
+  color: var(--text-2); background: rgba(31,35,41,.06); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.nav .badge:empty { display: none; }
+.nav.active .badge { color: var(--blue); background: rgba(51,112,255,.12); }
+/* Inside the Dock app the page runs under a transparent title bar: leave room for the window buttons. */
+.native .side { padding-top: 46px; }
 .side .bottom { margin-top: auto; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -48,12 +53,11 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .wrap { flex: 1; min-height: 0; overflow: auto; padding: 0 0 32px; }
 
 /* Columns share the window width; minimums only overflow on very narrow windows. */
-/* Columns share the window width; minimums only overflow on very narrow windows. */
 .grid { width: 100%; min-width: 1150px; }
 .row { display: flex; min-height: var(--row); }
 .cell { border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); padding: 0 8px;
   display: flex; align-items: center; gap: 6px; overflow: hidden; background: inherit; }
-.c-title { flex: 5 1 0; min-width: 240px; } .c-tag { flex: 0 0 116px; } .c-status { flex: 0 0 82px; }
+.c-title { flex: 3 1 0; min-width: 240px; } .c-tag { flex: 0 0 116px; } .c-status { flex: 0 0 82px; }
 .c-cat { flex: 1 1 0; min-width: 100px; } .c-note { flex: 2 1 0; min-width: 120px; } .c-folder { flex: 2 1 0; min-width: 140px; }
 .c-dur { flex: 0 0 146px; } .c-upd { flex: 0 0 100px; } .c-crt { flex: 0 0 100px; border-right: 0; }
 .c-parent { flex: 1 1 0; min-width: 100px; border-right: 0; display: none; }
@@ -63,7 +67,8 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .head { position: sticky; top: 0; z-index: 4; background: #fff; }
 .head .cell { height: 36px; color: var(--text-2); border-bottom: 1px solid var(--line); background: #fff; }
 .head .cell.frozen { z-index: 5; }
-.head .icon { color: var(--text-3); font-size: 12px; width: 16px; text-align: center; flex: none; }
+.head .icon { color: var(--text-3); width: 14px; height: 14px; flex: none; display: inline-flex; }
+.head .icon svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .data { background: #fff; }
 .data:hover, .data.selected { background: var(--bg-hover); }
 .data .cell.editable { cursor: pointer; }
@@ -204,6 +209,8 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 <script>
 'use strict';
 const TOKEN = '__TOKEN__';
+const BRIDGE = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.noesis;
+if (BRIDGE) document.documentElement.classList.add('native');
 // Interface text only; task contents and daily logs stay as written.
 const TEXT = {
   zh: {
@@ -247,8 +254,22 @@ let prefs = {lang: 'zh', view: 'todo', folded: ['done'], expanded: []};
 const T = () => TEXT[prefs.lang] || TEXT.zh;
 const TAG_ICON = {urgent_important: '🔥', important: '🚀', urgent: '⚡', neither: '🍃'};
 const ORDER = ['todo', 'doing', 'done'];
-const COLS = [['tag', '◎'], ['status', '◎'], ['cat', '◎'], ['note', 'A≡'], ['folder', '▭'], ['dur', 'ƒx'],
-  ['upd', '◷'], ['crt', '◷'], ['parent', '⇡']];
+// One stroke style for every column type: text, single select, folder, duration, date, parent.
+const ICONS = {
+  text: '<path d="M3 4h10M3 8h10M3 12h6"/>',
+  select: '<circle cx="8" cy="8" r="5.5"/><path d="M5.8 7.2L8 9.4l2.2-2.2"/>',
+  folder: '<path d="M2.5 4.5a1 1 0 0 1 1-1h2.8l1.5 1.5h4.7a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',
+  timer: '<circle cx="8" cy="9" r="5"/><path d="M8 6.5V9l1.6 1.2M6.5 2h3"/>',
+  date: '<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v2.5M10.5 2v2.5"/>',
+  parent: '<path d="M13 12H8.5A3.5 3.5 0 0 1 5 8.5V3.5M2.5 6L5 3.5 7.5 6"/>',
+};
+const COLS = [['tag', 'select'], ['status', 'select'], ['cat', 'select'], ['note', 'text'], ['folder', 'folder'],
+  ['dur', 'timer'], ['upd', 'date'], ['crt', 'date'], ['parent', 'parent']];
+function icon(name) {
+  const node = el('span', 'icon');
+  node.innerHTML = '<svg viewBox="0 0 16 16">' + ICONS[name] + '</svg>';  // Static markup only.
+  return node;
+}
 let state = {todos: [], folders: {}, now: null};
 const selected = new Set();
 let expanded = new Set();
@@ -307,8 +328,16 @@ function applyText() {
   document.querySelectorAll('[data-t]').forEach(node => { node.textContent = T()[node.dataset.t]; });
   document.querySelectorAll('[data-t-placeholder]').forEach(node => { node.placeholder = T()[node.dataset.tPlaceholder]; });
   document.querySelectorAll('#lang button').forEach(node => node.classList.toggle('on', node.dataset.lang === prefs.lang));
-  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.noesis;
-  if (bridge) bridge.postMessage({action: 'language', lang: prefs.lang});  // Native menus follow the page.
+  if (BRIDGE) BRIDGE.postMessage({action: 'language', lang: prefs.lang});  // Native menus follow the page.
+}
+// The window drags by the header strip up to its first control, so search and buttons stay clickable.
+function reportDragArea() {
+  if (!BRIDGE) return;
+  const top = document.querySelector('.view:not([hidden]) .top');
+  if (!top) return;
+  const controls = [...top.querySelectorAll('input, button')].filter(node => node.offsetWidth);
+  const end = controls.length ? Math.min(...controls.map(node => node.getBoundingClientRect().left)) - 8 : innerWidth;
+  BRIDGE.postMessage({action: 'dragArea', width: Math.max(0, Math.round(end)), height: Math.round(top.getBoundingClientRect().bottom)});
 }
 
 function headRow() {
@@ -319,10 +348,10 @@ function headRow() {
   all.checked = state.todos.length > 0 && selected.size === state.todos.length;
   all.onchange = () => { selected.clear(); if (all.checked) state.todos.forEach(t => selected.add(t.id)); render(); };
   idx.append(all);
-  first.append(idx, el('span', 'icon', 'A≡'), el('span', 'clip', T().cols.title));
+  first.append(idx, icon('text'), el('span', 'clip', T().cols.title));
   row.append(first);
-  for (const [key, icon] of COLS) {
-    const cell = el('div', 'cell c-' + key); cell.append(el('span', 'icon', icon), el('span', 'clip', T().cols[key])); row.append(cell);
+  for (const [key, kind] of COLS) {
+    const cell = el('div', 'cell c-' + key); cell.append(icon(kind), el('span', 'clip', T().cols[key])); row.append(cell);
   }
   return row;
 }
@@ -416,6 +445,7 @@ function render() {
   for (const id of [...selected]) if (!state.todos.some(t => t.id === id)) selected.delete(id);
   const bulk = document.getElementById('bulk');
   bulk.hidden = selected.size === 0; bulk.textContent = T().bulk(selected.size);
+  reportDragArea();
   grid.replaceChildren(headRow());
   const ids = new Set(state.todos.map(t => t.id));
   const roots = state.todos.filter(item => !item.parent || !ids.has(item.parent));
@@ -555,6 +585,7 @@ async function route() {
   for (const key of ['todo', 'daily', 'settings']) document.getElementById('view-' + key).hidden = name !== key;
   document.querySelectorAll('.nav').forEach(node => node.classList.toggle('active', node.dataset.view === name));
   document.title = 'NOESIS · ' + T()[name];
+  reportDragArea();
   if (prefs.view !== name) savePrefs({view: name});
   if (name === 'daily') {
     if (!days.length) await loadDays();
@@ -579,7 +610,7 @@ document.querySelectorAll('.nav').forEach(node => node.onclick = () => {
   location.hash = view === 'daily' && currentDay ? 'daily/' + currentDay : view;
 });
 window.addEventListener('hashchange', route);
-window.addEventListener('resize', closeFloating);
+window.addEventListener('resize', () => { closeFloating(); reportDragArea(); });
 window.addEventListener('focus', () => {
   if (!document.querySelector('.editor, .menu')) load();
   loadDays();

@@ -1,10 +1,18 @@
 import AppKit
 import WebKit
 
+// Transparent title bar strip: drags the window and zooms on double-click like a native title bar.
+final class DragStrip: NSView {
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { window?.performZoom(nil) } else { window?.performDrag(with: event) }
+    }
+}
+
 // Dock app for the todo board and daily logs. The Python CLI owns data and serving; this window only hosts the page.
 final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow?
     private var webView: WKWebView?
+    private let dragStrip = DragStrip()
     private var server: Process?
     private var board: URL?
     private var buffer = ""
@@ -27,13 +35,24 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
             if let title = view.title, !title.isEmpty { self?.window?.title = title }
         }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 820),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = "NOESIS"
-        window.contentView = view
+        // The page paints right up to the window edge, so the sidebar and header share one colour with the title bar.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = .white
+        let container = NSView()
+        view.frame = container.bounds
+        view.autoresizingMask = [.width, .height]
+        container.addSubview(view)
+        dragStrip.autoresizingMask = [.minYMargin]  // Stays pinned to the top edge as the window resizes.
+        container.addSubview(dragStrip)
+        window.contentView = container
         window.center()
         window.setFrameAutosaveName("NOESISTodoWindow")
         window.makeKeyAndOrderFront(nil)
         self.window = window
+        setDragArea(width: 0, height: 0)
         NSApp.activate(ignoringOtherApps: true)
         startServer()
     }
@@ -60,6 +79,14 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
             menu.addItem(item)
         }
         return menu
+    }
+
+    private func setDragArea(width: Double, height: Double) {
+        guard let view = window?.contentView else { return }
+        // Before the page reports its header, only the title bar band itself drags.
+        let w = width > 0 ? CGFloat(width) : view.bounds.width
+        let h = height > 0 ? CGFloat(min(height, 80)) : 28
+        dragStrip.frame = NSRect(x: 0, y: view.bounds.height - h, width: min(w, view.bounds.width), height: h)
     }
 
     @objc private func reload() { if board != nil { webView?.reload() } }
@@ -143,6 +170,10 @@ final class TodoApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUI
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, board != nil, let window = window,
               let body = message.body as? [String: Any] else { return }
+        if body["action"] as? String == "dragArea", let width = body["width"] as? Double, let height = body["height"] as? Double {
+            setDragArea(width: width, height: height)
+            return
+        }
         if body["action"] as? String == "language", let lang = body["lang"] as? String {
             english = lang == "en"
             NSApp.mainMenu = mainMenu()

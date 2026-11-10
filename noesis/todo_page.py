@@ -67,6 +67,10 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .head { position: sticky; top: 0; z-index: 4; background: #fff; }
 .head .cell { height: 36px; color: var(--text-2); border-bottom: 1px solid var(--line); background: #fff; }
 .head .cell.frozen { z-index: 5; }
+.head .cell { position: relative; }
+.grip { position: absolute; top: 0; right: -1px; width: 7px; height: 100%; cursor: col-resize; z-index: 1; }
+.grip:hover, .grip.on { background: linear-gradient(var(--blue), var(--blue)) center / 2px 100% no-repeat; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
 .head .icon { color: var(--text-3); width: 14px; height: 14px; flex: none; display: inline-flex; }
 .head .icon svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .data { background: #fff; }
@@ -169,6 +173,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .segment button { height: 28px; padding: 0 14px; border-radius: 5px; color: var(--text-2); }
 .segment button.on { background: #fff; color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgba(31,35,41,.12); }
 </style>
+<style id="colw"></style>
 </head>
 <body>
 <div class="app">
@@ -228,7 +233,7 @@ const TEXT = {
     unlink: '取消关联', link: '关联文件夹', failed: '操作失败，请重试。',
     month: (y, m) => y + ' 年 ' + m + ' 月', dayLabel: (m, d) => m + ' 月 ' + d + ' 日', week: '周日 周一 周二 周三 周四 周五 周六'.split(' '),
     emptyDaily: '还没有日报。运行 noesis build-daily 或等待后台任务生成。',
-    language: '界面语言', languageHint: '仅切换界面文字；任务内容和日报保持原文。',
+    resize: '拖动调整列宽，双击恢复', language: '界面语言', languageHint: '仅切换界面文字；任务内容和日报保持原文。',
   },
   en: {
     brand: 'Seek truth', todo: 'To-do', daily: 'Daily', settings: 'Settings', todoSub: 'Stored locally · link folders to tasks',
@@ -247,10 +252,10 @@ const TEXT = {
     dayLabel: (m, d) => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1] + ' ' + d,
     week: 'Sun Mon Tue Wed Thu Fri Sat'.split(' '),
     emptyDaily: 'No daily logs yet. Run noesis build-daily or wait for the background job.',
-    language: 'Language', languageHint: 'Changes interface text only; tasks and daily logs keep their original wording.',
+    resize: 'Drag to resize, double-click to reset', language: 'Language', languageHint: 'Changes interface text only; tasks and daily logs keep their original wording.',
   },
 };
-let prefs = {lang: 'zh', view: 'todo', folded: ['done'], expanded: []};
+let prefs = {lang: 'zh', view: 'todo', folded: ['done'], expanded: [], widths: {}};
 const T = () => TEXT[prefs.lang] || TEXT.zh;
 const TAG_ICON = {urgent_important: '🔥', important: '🚀', urgent: '⚡', neither: '🍃'};
 const ORDER = ['todo', 'doing', 'done'];
@@ -265,6 +270,43 @@ const ICONS = {
 };
 const COLS = [['tag', 'select'], ['status', 'select'], ['cat', 'select'], ['note', 'text'], ['folder', 'folder'],
   ['dur', 'timer'], ['upd', 'date'], ['crt', 'date'], ['parent', 'parent']];
+// Default widths match the stylesheet minimums; a dragged column becomes fixed and the grid grows with it.
+const BASE_WIDTH = {title: 240, tag: 116, status: 82, cat: 100, note: 120, folder: 140, dur: 146, upd: 100, crt: 100};
+const MIN_WIDTH = 60, MAX_WIDTH = 1200;
+function applyWidths() {
+  const widths = prefs.widths || {};
+  const total = Object.entries(BASE_WIDTH).reduce((sum, [key, base]) => sum + (widths[key] || base), 0)
+    + (widths.parent || 0);
+  document.getElementById('colw').textContent = Object.entries(widths)
+    .map(([key, px]) => `.c-${key} { flex: 0 0 ${px}px; min-width: 0; }`).join('\n')
+    + `\n.grid { min-width: ${Math.max(1150, total)}px; }`;
+}
+function grip(key, cell) {
+  const handle = el('div', 'grip');
+  handle.title = T().resize;
+  handle.onmousedown = event => {
+    event.preventDefault(); event.stopPropagation();
+    const start = event.clientX, from = cell.getBoundingClientRect().width;
+    let moved = false;
+    handle.classList.add('on'); document.body.classList.add('resizing');
+    const move = e => {
+      const px = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, from + e.clientX - start)));
+      prefs.widths = {...prefs.widths, [key]: px}; moved = true; applyWidths();
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      handle.classList.remove('on'); document.body.classList.remove('resizing');
+      if (moved) savePrefs({widths: prefs.widths});  // A bare click (or half of a double-click) saves nothing.
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  };
+  handle.ondblclick = event => {
+    event.stopPropagation();
+    const widths = {...prefs.widths}; delete widths[key];
+    savePrefs({widths}); applyWidths();
+  };
+  cell.append(handle);
+}
 function icon(name) {
   const node = el('span', 'icon');
   node.innerHTML = '<svg viewBox="0 0 16 16">' + ICONS[name] + '</svg>';  // Static markup only.
@@ -349,9 +391,11 @@ function headRow() {
   all.onchange = () => { selected.clear(); if (all.checked) state.todos.forEach(t => selected.add(t.id)); render(); };
   idx.append(all);
   first.append(idx, icon('text'), el('span', 'clip', T().cols.title));
+  grip('title', first);
   row.append(first);
   for (const [key, kind] of COLS) {
     const cell = el('div', 'cell c-' + key); cell.append(icon(kind), el('span', 'clip', T().cols[key])); row.append(cell);
+    grip(key, cell);
   }
   return row;
 }
@@ -619,6 +663,7 @@ window.addEventListener('focus', () => {
   try { prefs = await api('GET', '/api/prefs'); } catch (error) { toast(error.message); }
   expanded = new Set(prefs.expanded);
   folded = new Set(prefs.folded);
+  applyWidths();
   if (!location.hash && prefs.view !== 'todo') history.replaceState(null, '', '#' + prefs.view);
   applyText();
   await Promise.all([load(), loadDays()]);

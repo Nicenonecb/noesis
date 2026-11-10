@@ -23,7 +23,8 @@ from ._vendor.mistune.plugins.table import table_in_list
 from .todo_page import PAGE
 
 MAX_BODY = 64 * 1024
-DEFAULT_PREFS = {'lang': 'zh', 'view': 'todo', 'folded': ['done'], 'expanded': []}
+DEFAULT_PREFS = {'lang': 'zh', 'view': 'todo', 'folded': ['done'], 'expanded': [], 'widths': {}}
+COLUMNS = ('title', 'tag', 'status', 'cat', 'note', 'folder', 'dur', 'upd', 'crt', 'parent')
 DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 FRONT_MATTER = re.compile(r'\A---\n.*?\n---\n', re.S)
 
@@ -114,7 +115,9 @@ class Board:
         checks = {'lang': lambda v: v in ('zh', 'en'), 'view': lambda v: v in ('todo', 'daily', 'settings'),
                   'folded': lambda v: isinstance(v, list) and set(v) <= set(STATUSES),
                   'expanded': lambda v: isinstance(v, list) and len(v) <= 500
-                  and all(isinstance(i, str) and len(i) <= 32 for i in v)}
+                  and all(isinstance(i, str) and len(i) <= 32 for i in v),
+                  'widths': lambda v: isinstance(v, dict) and set(v) <= set(COLUMNS)
+                  and all(type(px) is int and 60 <= px <= 1200 for px in v.values())}
         for key, value in changes.items():
             if key not in checks or not checks[key](value):
                 raise ConfigError(f'界面设置 {key} 无效。')

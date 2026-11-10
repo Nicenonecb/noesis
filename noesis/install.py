@@ -129,9 +129,11 @@ def compile_todo(config,project):
     info={'CFBundleIdentifier':TODO_ID,'CFBundleName':'NOESIS',
           'CFBundleDisplayName':'NOESIS','CFBundleExecutable':'NOESISTodo',
           'CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.0','CFBundleVersion':'1',
-          'NSHighResolutionCapable':True,'LSMinimumSystemVersion':'12.0',
+          'NSHighResolutionCapable':True,'LSMinimumSystemVersion':'12.0','CFBundleIconFile':'NOESIS',
           'NOESISExecutable':str(config.root/'bin/noesis'),'NOESISDataDirectory':str(config.root)}
     atomic_write(app/'Contents/Info.plist',plistlib.dumps(info))
+    private_directory(app/'Contents/Resources')
+    shutil.copyfile(project/'noesis/assets/NOESIS.icns',app/'Contents/Resources/NOESIS.icns')
     subprocess.run(['swiftc','-O',str(project/'noesis/todo_app.swift'),'-o',str(app/'Contents/MacOS/NOESISTodo')],
                    check=True,capture_output=True,timeout=120)
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True,capture_output=True,timeout=30)

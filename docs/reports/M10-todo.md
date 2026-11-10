@@ -145,12 +145,22 @@
 - Bug：本轮未发现已证实 bug。
 - 未验证：终端无屏幕录制权限，未截取应用画面；用户已在应用内确认标题栏外观。
 
+## 应用图标
+
+- 新增 `noesis/assets/icon.svg`（蓝色圆角方底、白色圆头 N、右上黄色圆点）与由它生成的 `NOESIS.icns`；
+  `scripts/make_icon.swift` 用 AppKit 渲染 16–1024px 并调用 `iconutil`，改 SVG 后重跑即可。
+- `compile_todo` 将 icns 复制到 `Contents/Resources` 并设置 `CFBundleIconFile`，在签名前完成。
+- 已直接精简：未发现需要精简的重复或防御逻辑。
+- Bug：本轮未发现已证实 bug。
+- 验证：完整测试 **257 passed**；重新运行 `scripts/install.sh`，确认 Resources 含 NOESIS.icns、Info.plist 指向它、
+  `codesign -v` 通过；icns 转 PNG 目视检查。
+- 未验证：Dock/Launchpad 可能缓存旧图标，需重启应用或 Dock 后实机查看。
+
 ## 已知限制
 
 - 命令行方式下页面需要终端中的 `noesis todo` 进程保持运行；桌面应用无此问题。
 - 消息在生成日报时已被截断到 120/300 字，应用里只能显示截断后的内容。
 - 修改源码后需重新运行 `scripts/install.sh`，应用使用的是数据目录中的运行包。
-- 应用暂无自定义图标。
 - 窗口宽度小于约 1360px 时表格仍会超出，可以横向滑动，但不显示滚动条。
 - 分组固定为三种状态，暂不支持自定义列和新建分组。
 - 待办尚未接入晨报或日报。

@@ -48,6 +48,68 @@ def test_delete_cascades_to_subtasks(config):
     assert [item['id'] for item in read_todos(config)] == [keep]
 
 
+def test_move_reorders_nests_outdents_and_updates_status(config):
+    first = change_todo(config, 'create', title='父任务', status='doing')['id']
+    child_a = change_todo(config, 'create', title='子任务A', parent=first, status='todo')['id']
+    child_b = change_todo(config, 'create', title='子任务B', parent=first, status='done')['id']
+    grand = change_todo(config, 'create', title='孙任务', parent=child_a, status='todo')['id']
+    second = change_todo(config, 'create', title='独立任务', status='doing')['id']
+
+    # Reorder siblings under the same parent.
+    change_todo(config, 'move', identity=child_b, parent=first, before=child_a)
+    assert [item['id'] for item in read_todos(config) if item['parent'] == first] == [child_b, child_a]
+
+    # Drag a subtask (with its own child) out to top-level after its former parent.
+    moved = change_todo(config, 'move', identity=child_a, parent=None, after=first, status='doing')
+    assert moved['parent'] is None and moved['status'] == 'doing' and moved['done_at'] is None
+    todos = read_todos(config)
+    assert [item['id'] for item in todos if item['parent'] is None] == [first, child_a, second]
+    assert next(item for item in todos if item['id'] == grand)['parent'] == child_a
+
+    # Drag a top-level task into another task as a subtask without overwriting its status.
+    nested = change_todo(config, 'move', identity=second, parent=child_a, position='end')
+    assert nested['parent'] == child_a and nested['status'] == 'doing'
+    assert [item['id'] for item in read_todos(config) if item['parent'] == child_a] == [grand, second]
+
+    # Dragging to done sets done_at; reordering within done keeps the original done_at; leaving done clears it.
+    done_item = change_todo(config, 'move', identity=child_a, parent=None, position='start', status='done')
+    assert done_item['done_at'] is not None
+    assert read_todos(config)[0]['id'] == child_a
+    reordered = change_todo(config, 'move', identity=child_a, parent=None, position='end', status='done')
+    assert reordered['done_at'] == done_item['done_at']
+    assert read_todos(config)[-1]['id'] == child_a
+    reopened = change_todo(config, 'move', identity=child_a, parent=None, status='todo')
+    assert reopened['done_at'] is None
+
+
+def test_move_rejects_cycles_and_invalid_arguments(config):
+    root = change_todo(config, 'create', title='根任务')['id']
+    child = change_todo(config, 'create', title='子任务', parent=root)['id']
+    grand = change_todo(config, 'create', title='孙任务', parent=child)['id']
+    before_snapshot = read_todos(config)
+
+    for kwargs in [
+        {'identity': root, 'parent': root},
+        {'identity': root, 'parent': child},
+        {'identity': root, 'parent': grand},
+        {'identity': root, 'parent': 'missing'},
+        {'identity': root, 'before': 'missing'},
+        {'identity': root, 'after': 'missing'},
+        {'identity': root, 'before': child, 'after': grand},
+        {'identity': root, 'before': child, 'position': 'start'},
+        {'identity': root, 'position': 'middle'},
+        {'identity': root, 'title': '不允许'},
+        {'identity': 'missing', 'parent': None},
+    ]:
+        with pytest.raises(ConfigError):
+            change_todo(config, 'move', **kwargs)
+    with pytest.raises(ConfigError):
+        change_todo(config, 'update', identity=child, parent=None)
+    with pytest.raises(ConfigError):
+        change_todo(config, 'create', title='非法', position='start')
+    assert read_todos(config) == before_snapshot
+
+
 def test_titles_are_redacted(config):
     item = change_todo(config, 'create', title='key sk-' + 'a' * 30)
     assert 'aaaa' not in item['title']
@@ -93,6 +155,24 @@ def test_board_crud_and_folder_actions(config, tmp_path, monkeypatch):
     assert request(board, 'POST', '/api/todos', ['not', 'object'])[0] == 400
     assert request(board, 'POST', '/api/delete', {'ids': [identity]})[0] == 200
     assert read_todos(config) == []
+
+
+def test_board_move_api(config):
+    board = Board(config, 8765)
+    parent_id = json.loads(request(board, 'POST', '/api/todos', {'title': '父任务', 'status': 'doing'})[1])['id']
+    child_id = json.loads(request(board, 'POST', '/api/todos', {'title': '子任务', 'parent': parent_id, 'status': 'todo'})[1])['id']
+    sibling_id = json.loads(request(board, 'POST', '/api/todos', {'title': '其他任务', 'status': 'doing'})[1])['id']
+
+    status, payload = request(board, 'POST', '/api/move', {'id': child_id, 'parent': None, 'before': sibling_id, 'status': 'doing'})
+    assert status == 200
+    moved = json.loads(payload)
+    assert moved['parent'] is None and moved['status'] == 'doing'
+
+    status, _ = request(board, 'POST', '/api/move', {'id': parent_id, 'parent': child_id})
+    assert status == 200
+    # Moving a parent under its own child must be rejected.
+    assert request(board, 'POST', '/api/move', {'id': child_id, 'parent': parent_id})[0] == 400
+    assert request(board, 'PATCH', f'/api/todos/{parent_id}', {'parent': None})[0] == 400
 
 
 def test_cli_add_and_list(config, tmp_path, capsys):

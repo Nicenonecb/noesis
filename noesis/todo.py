@@ -16,6 +16,7 @@ TAGS = {'urgent_important': '重要紧急', 'important': '重要不紧急',
 STATUSES = {'todo': '未开始', 'doing': '进行中', 'done': '已完成'}
 LIMITS = {'title': 200, 'category': 40, 'note': 2000}
 MAX_FOLDERS = 10
+_KEEP = object()
 
 
 def _path(config):
@@ -46,6 +47,15 @@ def _folders(value):
     return result
 
 
+def _subtree(todos, roots):
+    found = set(roots)
+    while True:
+        grown = found | {item['id'] for item in todos if item['parent'] in found}
+        if grown == found:
+            return found
+        found = grown
+
+
 def _apply(item, fields):
     labels = {'title': '任务名称', 'category': '任务类别', 'note': '解决办法/备忘'}
     for key, value in fields.items():
@@ -65,32 +75,65 @@ def _apply(item, fields):
             raise ConfigError(f'不支持修改字段 {key}。')
 
 
-def change_todo(config, action, *, identity=None, ids=(), parent=None, **fields):
-    """Create, update or delete under one lock; deleting a record removes its subtasks."""
+def _require_item(todos, identity, message='未找到该任务，请刷新后再试。'):
+    item = next((item for item in todos if item['id'] == identity), None)
+    if item is None:
+        raise ConfigError(message)
+    return item
+
+
+def change_todo(config, action, *, identity=None, ids=(), parent=_KEEP, before=None, after=None, position=None, **fields):
+    """Create, update, move or delete under one lock; deleting a record removes its subtasks."""
     with file_lock(config.root / 'run/todo.lock'):
         todos = read_todos(config)
         now = _now(config)
         if action == 'create':
-            if parent is not None and not any(item['id'] == parent for item in todos):
-                raise ConfigError('未找到父记录。')
+            if before is not None or after is not None or position is not None:
+                raise ConfigError('不支持的位置参数。')
+            parent_id = None if parent is _KEEP else parent
+            if parent_id is not None:
+                _require_item(todos, parent_id, '未找到父记录。')
             item = {'id': uuid4().hex[:12], 'title': '', 'tag': None, 'status': 'todo', 'category': '',
-                    'note': '', 'folders': [], 'parent': parent, 'created_at': now, 'updated_at': now,
+                    'note': '', 'folders': [], 'parent': parent_id, 'created_at': now, 'updated_at': now,
                     'done_at': None}
             _apply(item, fields)
             todos.append(item)
         elif action == 'update':
-            item = next((item for item in todos if item['id'] == identity), None)
-            if item is None:
-                raise ConfigError('未找到该任务，请刷新后再试。')
+            if parent is not _KEEP or before is not None or after is not None or position is not None:
+                raise ConfigError('请通过移动操作修改任务层级或顺序。')
+            item = _require_item(todos, identity)
             _apply(item, fields)
             item['updated_at'] = now
+        elif action == 'move':
+            item = _require_item(todos, identity)
+            if any(key != 'status' for key in fields):
+                raise ConfigError('移动操作仅支持同步修改状态。')
+            if sum(value is not None for value in (before, after, position)) > 1:
+                raise ConfigError('目标位置参数冲突。')
+            if position is not None and position not in ('start', 'end'):
+                raise ConfigError('目标位置无效。')
+            if parent is not _KEEP:
+                if parent is not None:
+                    _require_item(todos, parent, '未找到父记录。')
+                    if parent in _subtree(todos, {identity}):
+                        raise ConfigError('不能将任务移动到自身或子任务下。')
+                item['parent'] = parent
+            anchor = before if before is not None else after
+            if anchor is not None:
+                _require_item(todos, anchor, '未找到目标位置，请刷新后再试。')
+            _apply(item, fields)
+            if before is not None and before != identity:
+                todos.remove(item)
+                todos.insert(next(i for i, other in enumerate(todos) if other['id'] == before), item)
+            elif after is not None and after != identity:
+                todos.remove(item)
+                todos.insert(next(i for i, other in enumerate(todos) if other['id'] == after) + 1, item)
+            elif position in ('start', 'end'):
+                todos.remove(item)
+                todos.insert(0 if position == 'start' else len(todos), item)
+            item['updated_at'] = now
         elif action == 'delete':
-            doomed = set(ids)
-            while True:  # Collect descendants until the set stops growing.
-                grown = doomed | {item['id'] for item in todos if item['parent'] in doomed}
-                if grown == doomed:
-                    break
-                doomed = grown
+            doomed = _subtree(todos, ids)
             todos = [item for item in todos if item['id'] not in doomed]
             item = None
         else:

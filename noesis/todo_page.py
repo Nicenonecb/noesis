@@ -84,7 +84,38 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .data:hover, .data.selected { background: var(--bg-hover); }
 .data .cell.editable { cursor: pointer; }
 .data .cell.editable:hover { box-shadow: inset 0 0 0 1px #bacefd; }
-.idx { width: 40px; flex: none; color: var(--text-3); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+.drag { width: 16px; height: 22px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3); opacity: 0; cursor: grab; border-radius: 3px; }
+.data:hover .drag, .data.dragging .drag { opacity: 1; }
+.drag:hover { color: var(--text); background: var(--line); }
+.drag svg { width: 12px; height: 12px; fill: currentColor; }
+body.dragging, body.dragging * { cursor: grabbing !important; user-select: none; }
+body.dragging .data:hover { background: #fff; }
+body.dragging .data.selected:hover { background: var(--bg-hover); }
+body.dragging .data:hover .rowtools, body.dragging .data:hover .add-folder { display: none; }
+body.dragging .data:not(.dragging):hover .drag { opacity: 0; }
+body.dragging .data:not(.selected):hover .idx .num { display: inline; }
+body.dragging .data:not(.selected):hover .idx input { display: none; }
+body.dragging .data:not(.drop-inside) .cell.editable:hover { box-shadow: none; }
+.data.dragging { opacity: .38; }
+.data.drop-inside { background: var(--blue-bg) !important; }
+.data.drop-inside .cell { box-shadow: inset 0 1.5px 0 var(--blue), inset 0 -1.5px 0 var(--blue); }
+.data.drop-inside .cell.frozen { box-shadow: inset 2px 1.5px 0 var(--blue), inset 0 -1.5px 0 var(--blue); }
+.ghead.drop-group { background: var(--blue-bg); }
+.ghead.drop-group .cell { box-shadow: inset 0 1.5px 0 var(--blue), inset 0 -1.5px 0 var(--blue); }
+.addrow.drop-out .cell { background: #f0f5ff; color: var(--blue); }
+.drop-line { position: fixed; height: 2px; background: var(--blue); z-index: 25; pointer-events: none; border-radius: 1px; }
+.drop-line::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--blue); }
+.drag-ghost { position: fixed; z-index: 30; pointer-events: none; display: flex; align-items: center; gap: 8px;
+  max-width: 360px; padding: 6px 10px; border-radius: 8px; background: #fff; border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(31,35,41,.16); font-size: 13px; }
+.drag-ghost .g-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; font-weight: 500; }
+.drag-ghost .g-sub { color: var(--text-3); font-size: 12px; flex: none; }
+.drag-ghost .g-hint { padding: 1px 8px; border-radius: 10px; font-size: 11px; flex: none;
+  background: var(--blue-bg); color: var(--blue); font-weight: 500; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drag-ghost .g-hint.out { background: #e8f8e6; color: #1f7a17; }
+.idx { width: 28px; flex: none; color: var(--text-3); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
 .idx input { display: none; margin: 0; width: 16px; height: 16px; cursor: pointer; vertical-align: middle; }
 .data:hover .idx .num, .data.selected .idx .num { display: none; }
 .data:hover .idx input, .data.selected .idx input, .head .idx input { display: inline-block; }
@@ -248,6 +279,9 @@ const TEXT = {
     month: (y, m) => y + ' 年 ' + m + ' 月', dayLabel: (m, d) => m + ' 月 ' + d + ' 日', week: '周日 周一 周二 周三 周四 周五 周六'.split(' '),
     emptyDaily: '还没有日报。运行 noesis build-daily 或等待后台任务生成。',
     resize: '拖动调整列宽，双击恢复', language: '界面语言', languageHint: '仅切换界面文字；任务内容和日报保持原文。',
+    dragHandle: '拖动排序、拖入子任务或向左/向外拖出', dragOutTop: '拖出到顶层', dragOutUp: '拖出到上一级',
+    dragInto: title => '设为「' + title + '」的子任务', dragToGroup: name => '移至「' + name + '」',
+    dragOutToGroup: name => '拖出到「' + name + '」', dragReorder: '调整顺序',
   },
   en: {
     brand: 'Seek truth', todo: 'To-do', daily: 'Daily', settings: 'Settings', todoSub: 'Stored locally · link folders to tasks',
@@ -269,6 +303,9 @@ const TEXT = {
     week: 'Sun Mon Tue Wed Thu Fri Sat'.split(' '),
     emptyDaily: 'No daily logs yet. Run noesis build-daily or wait for the background job.',
     resize: 'Drag to resize, double-click to reset', language: 'Language', languageHint: 'Changes interface text only; tasks and daily logs keep their original wording.',
+    dragHandle: 'Drag to reorder, nest, or pull out', dragOutTop: 'Move out to top level', dragOutUp: 'Move up one level',
+    dragInto: title => 'Subtask of “' + title + '”', dragToGroup: name => 'Move to “' + name + '”',
+    dragOutToGroup: name => 'Move out to “' + name + '”', dragReorder: 'Reorder',
   },
 };
 let prefs = {lang: 'zh', view: 'todo', folded: ['done'], expanded: [], widths: {}};
@@ -419,7 +456,7 @@ function headRow() {
   all.checked = state.todos.length > 0 && selected.size === state.todos.length;
   all.onchange = () => { selected.clear(); if (all.checked) state.todos.forEach(t => selected.add(t.id)); render(); };
   idx.append(all);
-  first.append(idx, icon('text'), el('span', 'clip', T().cols.title));
+  first.append(el('span', 'drag'), idx, icon('text'), el('span', 'clip', T().cols.title));
   grip('title', first);
   row.append(first);
   for (const [key, kind] of COLS) {
@@ -432,13 +469,20 @@ function headRow() {
 function dataRow(item, depth, number, options = {}) {
   const inToday = Boolean(options.today && isDoneToday(item));
   const row = el('div', 'row data' + (selected.has(item.id) ? ' selected' : ''));
+  row.dataset.id = item.id;
+  row.dataset.depth = String(depth);
+  row.dataset.group = options.group || item.status;
   const first = el('div', 'cell frozen c-title editable');
+  const handle = el('span', 'drag');
+  handle.title = T().dragHandle;
+  handle.onclick = event => event.stopPropagation();
+  handle.innerHTML = '<svg viewBox="0 0 12 12"><circle cx="4" cy="2.5" r="1"/><circle cx="8" cy="2.5" r="1"/><circle cx="4" cy="6" r="1"/><circle cx="8" cy="6" r="1"/><circle cx="4" cy="9.5" r="1"/><circle cx="8" cy="9.5" r="1"/></svg>';
   const idx = el('span', 'idx');
   const box = el('input'); box.type = 'checkbox'; box.checked = selected.has(item.id);
   box.onclick = event => event.stopPropagation();
   box.onchange = () => { box.checked ? selected.add(item.id) : selected.delete(item.id); render(); };
   idx.append(el('span', 'num', String(number)), box);
-  first.append(idx);
+  first.append(handle, idx);
   const indent = el('span'); indent.style.width = (depth * 20) + 'px'; indent.style.flex = 'none'; first.append(indent);
   const caret = el('span', 'caret');
   const kids = children(item.id);
@@ -467,7 +511,8 @@ function dataRow(item, depth, number, options = {}) {
   tools.append(sub, del);
   first.append(tools);
   if (kids.length) first.append(el('span', 'subcount', '↳ ' + descendants(item.id)));
-  first.onclick = () => editText(first, item, 'title', 200);
+  first.onmousedown = event => startDrag(event, item, row);
+  first.onclick = () => { if (!justDragged) editText(first, item, 'title', 200); };
   first.dataset.id = item.id; first.dataset.field = 'title';
   row.append(first);
 
@@ -541,24 +586,27 @@ function render() {
   reportDragArea();
   const renderGroup = ({key, pillClass, label, count, items, addStatus, today, id}) => {
     const group = el('div', 'group' + (folded.has(key) ? ' collapsed' : ''));
+    group.dataset.group = key;
     if (id) group.id = id;
     const head = el('div', 'ghead');
+    head.dataset.group = key;
     const left = el('div', 'cell frozen c-title');
     left.append(el('button', 'fold', folded.has(key) ? '▶' : '▼'), el('span', 'pill ' + pillClass, label),
       el('span', 'count', T().records(count)));
-    left.onclick = () => { folded.has(key) ? folded.delete(key) : folded.add(key); saveFolded(); render(); };
+    left.onclick = () => { if (justDragged) return; folded.has(key) ? folded.delete(key) : folded.add(key); saveFolded(); render(); };
     head.append(left, el('div', 'cell rest'));
     const rows = el('div', 'rows');
     let number = 0;
     const walk = (item, depth) => {
-      rows.append(dataRow(item, depth, ++number, {today}));
+      rows.append(dataRow(item, depth, ++number, {today, group: key}));
       if (expanded.has(item.id)) children(item.id).filter(c => matches(c, query)).forEach(child => walk(child, depth + 1));
     };
     items.forEach(item => walk(item, 0));
     if (addStatus) {
       const addRow = el('div', 'row addrow');
+      addRow.dataset.group = addStatus;
       const plus = el('div', 'cell frozen c-title', '＋'); plus.title = T().newIn(T().statuses[addStatus]);
-      plus.onclick = () => createIn(addStatus);
+      plus.onclick = () => { if (!justDragged) createIn(addStatus); };
       addRow.append(plus, el('div', 'cell rest'));
       rows.append(addRow);
     }
@@ -586,6 +634,286 @@ function render() {
     label: todayCount > 0 ? T().doneEarlier : T().statuses.done, count: earlierCount, items: earlier, addStatus: 'done'}));
   document.getElementById('todo-count').textContent = state.todos.filter(t => t.status !== 'done').length || '';
   if (!state.todos.length) grid.append(el('div', 'empty-board', T().emptyTodo));
+}
+
+let justDragged = false;
+function subtreeIds(rootId) {
+  const found = new Set([rootId]);
+  const stack = [rootId];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const child of children(current)) {
+      if (!found.has(child.id)) { found.add(child.id); stack.push(child.id); }
+    }
+  }
+  return found;
+}
+function groupLabel(groupKey) {
+  if (groupKey === 'done_today') return T().doneToday;
+  if (groupKey === 'done' && state.todos.some(isDoneToday)) return T().doneEarlier;
+  return T().statuses[groupKey] || groupKey;
+}
+function baseLeftOf(row, depth) {
+  const caret = row.querySelector('.caret');
+  if (caret) return caret.getBoundingClientRect().left - depth * 20;
+  return row.querySelector('.c-title').getBoundingClientRect().left + 68;
+}
+function ancestorAt(item, steps, byId) {
+  let node = item;
+  for (let step = 0; step < steps && node; step++) node = byId.get(node.parent);
+  return node || null;
+}
+function lastRowOfSubtree(anchorId, groupKey) {
+  const rows = [...document.querySelectorAll(`.group[data-group="${groupKey}"] .data`)];
+  const start = rows.findIndex(node => node.dataset.id === anchorId);
+  if (start < 0) return null;
+  const baseDepth = Number(rows[start].dataset.depth);
+  let last = rows[start];
+  for (let index = start + 1; index < rows.length; index++) {
+    if (Number(rows[index].dataset.depth) <= baseDepth) break;
+    last = rows[index];
+  }
+  return last;
+}
+function sameOrder(dragId, plan) {
+  const item = state.todos.find(todo => todo.id === dragId);
+  if (!item) return true;
+  const nextParent = plan.parent ?? null;
+  if ((item.parent || null) !== nextParent) return false;
+  if (plan.status && item.status !== plan.status) return false;
+  const list = state.todos.filter(todo => todo.id !== dragId);
+  let pos = list.length;
+  if (plan.before) pos = list.findIndex(todo => todo.id === plan.before);
+  else if (plan.after) pos = list.findIndex(todo => todo.id === plan.after) + 1;
+  else if (plan.position === 'start') pos = 0;
+  if (pos < 0) return false;
+  list.splice(pos, 0, item);
+  const pick = arr => nextParent
+    ? arr.filter(todo => todo.parent === nextParent).map(todo => todo.id)
+    : arr.filter(todo => !todo.parent && todo.status === item.status
+      && (item.status !== 'done' || isDoneToday(todo) === isDoneToday(item))).map(todo => todo.id);
+  const beforeIds = pick(state.todos), afterIds = pick(list);
+  return beforeIds.length === afterIds.length && beforeIds.every((id, index) => id === afterIds[index]);
+}
+function lineLabel(ctx, groupKey, parent, depth) {
+  const outdent = Boolean(ctx.item.parent) && (!parent || depth < ctx.sourceDepth);
+  if (!parent && ctx.item.parent) {
+    return {outdent: true, label: groupKey === ctx.sourceGroup ? T().dragOutTop : T().dragOutToGroup(groupLabel(groupKey))};
+  }
+  if (outdent) return {outdent: true, label: T().dragOutUp};
+  if (!parent && groupKey !== ctx.sourceGroup) return {outdent: false, label: T().dragToGroup(groupLabel(groupKey))};
+  return {outdent: false, label: T().dragReorder};
+}
+function groupPlan(ctx, groupKey, headEl) {
+  if (groupKey === 'done_today' && ctx.item.status === 'done' && !(ctx.item.parent && isDoneToday(ctx.item))) return null;
+  const label = groupLabel(groupKey);
+  return {kind: 'group', groupKey, parent: null, status: groupKey === 'done_today' ? 'done' : groupKey, position: 'start',
+    targetEl: headEl, outdent: Boolean(ctx.item.parent),
+    label: ctx.item.parent ? T().dragOutToGroup(label) : T().dragToGroup(label)};
+}
+function resolveDrop(clientX, clientY, ctx) {
+  const wrap = document.getElementById('wrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  if (clientY < wrapRect.top + 36 || clientY > wrapRect.bottom + 24
+      || clientX < wrapRect.left - 180 || clientX > wrapRect.right + 40) return null;
+  const nodes = [...document.querySelectorAll('#grid .ghead, #grid .data, #grid .addrow')];
+  let hit = null, hitRect = null, bestGap = 16;
+  for (const node of nodes) {
+    const rect = node.getBoundingClientRect();
+    if (rect.height === 0) continue;
+    if (clientY >= rect.top && clientY <= rect.bottom) { hit = node; hitRect = rect; break; }
+    const gap = Math.min(Math.abs(clientY - rect.top), Math.abs(clientY - rect.bottom));
+    if (gap < bestGap) { bestGap = gap; hit = node; hitRect = rect; }
+  }
+  if (!hit) return null;
+  let plan = null;
+  if (hit.classList.contains('ghead')) {
+    plan = groupPlan(ctx, hit.dataset.group, hit);
+  } else if (hit.classList.contains('addrow')) {
+    const groupKey = hit.dataset.group;
+    const outdent = Boolean(ctx.item.parent);
+    const label = outdent
+      ? (groupKey === ctx.sourceGroup ? T().dragOutTop : T().dragOutToGroup(groupLabel(groupKey)))
+      : T().dragToGroup(groupLabel(groupKey));
+    plan = {kind: 'line', groupKey, parent: null, status: groupKey, position: 'end',
+      anchorEl: hit, edge: 'top', depth: 0, outdent, label, highlightAdd: hit};
+  } else {
+    const groupKey = hit.dataset.group;
+    const targetId = hit.dataset.id;
+    const targetDepth = Number(hit.dataset.depth);
+    const targetItem = ctx.byId.get(targetId);
+    if (!targetItem) return null;
+    if (groupKey === 'done_today') {
+      plan = groupPlan(ctx, groupKey, hit.closest('.group')?.querySelector('.ghead'));
+    } else if (ctx.blocked.has(targetId)) {
+      if (ctx.item.parent && ctx.sourceGroup !== 'done_today' && ctx.sourceDepth > 0) {
+        const depth0Left = baseLeftOf(hit, targetDepth);
+        if (ctx.startX - clientX >= 28 || clientX <= depth0Left + (ctx.sourceDepth - 1) * 20 + 6) {
+          const want = Math.max(0, Math.min(ctx.sourceDepth - 1, Math.floor((clientX - depth0Left + 6) / 20)));
+          const anchor = ancestorAt(ctx.item, ctx.sourceDepth - want, ctx.byId);
+          const tail = anchor && lastRowOfSubtree(anchor.id, ctx.sourceGroup);
+          if (anchor && tail) {
+            const nextParent = anchor.parent || null;
+            plan = {kind: 'line', groupKey: ctx.sourceGroup, parent: nextParent,
+              status: nextParent ? undefined : ctx.sourceGroup, after: anchor.id, anchorEl: tail,
+              edge: 'bottom', depth: want, outdent: true, label: want === 0 ? T().dragOutTop : T().dragOutUp};
+          }
+        }
+      }
+    } else {
+      const ratio = (clientY - hitRect.top) / Math.max(1, hitRect.height);
+      if (ratio < 0.28) {
+        const parent = targetItem.parent || null;
+        const meta = lineLabel(ctx, groupKey, parent, targetDepth);
+        plan = {kind: 'line', groupKey, parent, status: parent ? undefined : groupKey, before: targetId,
+          anchorEl: hit, edge: 'top', depth: targetDepth, ...meta};
+      } else if (ratio <= 0.72) {
+        plan = {kind: 'inside', groupKey, parent: targetId, position: 'end', targetEl: hit,
+          outdent: false, label: T().dragInto(targetItem.title || T().untitled)};
+      } else {
+        const nextRow = hit.nextElementSibling;
+        const nextIsData = Boolean(nextRow && nextRow.classList.contains('data'));
+        const nextDepth = nextIsData ? Number(nextRow.dataset.depth) : 0;
+        if (nextIsData && nextDepth > targetDepth) {
+          plan = {kind: 'line', groupKey, parent: targetId, before: nextRow.dataset.id,
+            anchorEl: hit, edge: 'bottom', depth: targetDepth + 1,
+            outdent: false, label: T().dragInto(targetItem.title || T().untitled)};
+        } else {
+          const depth0Left = baseLeftOf(hit, targetDepth);
+          const rawDepth = Math.floor((clientX - depth0Left + 6) / 20);
+          const want = Math.max(nextDepth, Math.min(targetDepth, rawDepth));
+          const anchor = want < targetDepth ? ancestorAt(targetItem, targetDepth - want, ctx.byId) : targetItem;
+          if (anchor) {
+            const parent = anchor.parent || null;
+            const meta = lineLabel(ctx, groupKey, parent, want);
+            plan = {kind: 'line', groupKey, parent, status: parent ? undefined : groupKey, after: anchor.id,
+              anchorEl: hit, edge: 'bottom', depth: want, ...meta};
+          }
+        }
+      }
+    }
+  }
+  return plan && !sameOrder(ctx.id, plan) ? plan : null;
+}
+function startDrag(event, item, row) {
+  if (event.button !== 0 || event.target.closest('button, input, textarea, a')) return;
+  const onHandle = Boolean(event.target.closest('.drag'));
+  if (onHandle) event.preventDefault();
+  const threshold = onHandle ? 3 : 6;
+  const startX = event.clientX, startY = event.clientY;
+  let active = false, currentPlan = null, lastX = startX, lastY = startY, raf = 0;
+  let ghost = null, hint = null, line = null, ctx = null;
+  const clearMarks = () => {
+    document.querySelectorAll('.drop-inside, .drop-group, .drop-out').forEach(node =>
+      node.classList.remove('drop-inside', 'drop-group', 'drop-out'));
+    if (line) line.hidden = true;
+  };
+  const showPlan = plan => {
+    clearMarks();
+    if (!plan) { hint.textContent = ''; hint.hidden = true; return; }
+    hint.textContent = plan.label; hint.hidden = false; hint.classList.toggle('out', Boolean(plan.outdent));
+    if (plan.kind === 'inside' && plan.targetEl) {
+      plan.targetEl.classList.add('drop-inside');
+    } else if (plan.kind === 'group' && plan.targetEl) {
+      plan.targetEl.classList.add('drop-group');
+    } else if (plan.kind === 'line' && plan.anchorEl) {
+      if (plan.highlightAdd) plan.highlightAdd.classList.add('drop-out');
+      const wrapRect = document.getElementById('wrap').getBoundingClientRect();
+      const rect = plan.anchorEl.getBoundingClientRect();
+      const anchorDepth = plan.anchorEl.classList.contains('data') ? Number(plan.anchorEl.dataset.depth) : 0;
+      const base = plan.anchorEl.classList.contains('data')
+        ? baseLeftOf(plan.anchorEl, anchorDepth)
+        : plan.anchorEl.querySelector('.c-title').getBoundingClientRect().left + 12;
+      const left = Math.max(wrapRect.left + 8, base + plan.depth * 20);
+      const top = Math.max(wrapRect.top + 40, Math.min(wrapRect.bottom - 2, plan.edge === 'top' ? rect.top : rect.bottom));
+      line.style.left = left + 'px';
+      line.style.top = (top - 1) + 'px';
+      line.style.width = Math.max(60, wrapRect.right - left - 12) + 'px';
+      line.hidden = false;
+    }
+  };
+  const update = () => {
+    ghost.style.left = Math.min(innerWidth - 180, Math.max(8, lastX + 14)) + 'px';
+    ghost.style.top = Math.min(innerHeight - 44, Math.max(8, lastY + 14)) + 'px';
+    currentPlan = resolveDrop(lastX, lastY, ctx);
+    showPlan(currentPlan);
+  };
+  const tickScroll = () => {
+    raf = 0;
+    if (!active) return;
+    const wrap = document.getElementById('wrap');
+    const rect = wrap.getBoundingClientRect();
+    let delta = 0;
+    if (lastY < rect.top + 56) delta = -10;
+    else if (lastY > rect.bottom - 44) delta = 10;
+    if (delta) {
+      const prev = wrap.scrollTop;
+      wrap.scrollTop += delta;
+      if (wrap.scrollTop !== prev) { update(); raf = requestAnimationFrame(tickScroll); }
+    }
+  };
+  const cleanup = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('keydown', onKey);
+    window.removeEventListener('blur', cleanup);
+    if (raf) cancelAnimationFrame(raf);
+    if (!active) return;
+    clearMarks();
+    document.body.classList.remove('dragging');
+    document.querySelectorAll('.data.dragging').forEach(node => node.classList.remove('dragging'));
+    ghost?.remove(); line?.remove();
+    active = false;
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 0);
+  };
+  const onKey = keyEvent => { if (keyEvent.key === 'Escape') cleanup(); };
+  const onMove = moveEvent => {
+    lastX = moveEvent.clientX; lastY = moveEvent.clientY;
+    if (!active) {
+      if (Math.hypot(lastX - startX, lastY - startY) < threshold) return;
+      active = true;
+      closeFloating();
+      document.body.classList.add('dragging');
+      ctx = {id: item.id, item, startX, startY, sourceGroup: row.dataset.group,
+        sourceDepth: Number(row.dataset.depth), blocked: subtreeIds(item.id),
+        byId: new Map(state.todos.map(todo => [todo.id, todo]))};
+      document.querySelectorAll('.data').forEach(node => {
+        if (ctx.blocked.has(node.dataset.id)) node.classList.add('dragging');
+      });
+      ghost = el('div', 'drag-ghost');
+      ghost.append(el('span', 'g-title', item.title || T().untitled));
+      const subTotal = ctx.blocked.size - 1;
+      if (subTotal) ghost.append(el('span', 'g-sub', '+' + subTotal));
+      hint = el('span', 'g-hint'); hint.hidden = true;
+      ghost.append(hint);
+      line = el('div', 'drop-line'); line.hidden = true;
+      document.body.append(line, ghost);
+    }
+    update();
+    if (!raf) raf = requestAnimationFrame(tickScroll);
+  };
+  const onUp = () => {
+    const plan = active ? currentPlan : null;
+    const saved = ctx;
+    cleanup();
+    if (plan && saved) commitDrop(saved, plan);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('blur', cleanup);
+}
+async function commitDrop(ctx, plan) {
+  const payload = {id: ctx.id, parent: plan.parent ?? null};
+  if (plan.before) payload.before = plan.before;
+  else if (plan.after) payload.after = plan.after;
+  else if (plan.position) payload.position = plan.position;
+  if (plan.status) payload.status = plan.status;
+  if (plan.parent && !expanded.has(plan.parent)) { expanded.add(plan.parent); saveExpanded(); }
+  const openGroup = plan.groupKey === 'done' && (ctx.item.status !== 'done' || isDoneToday(ctx.item)) ? 'done_today' : plan.groupKey;
+  if (openGroup && folded.delete(openGroup)) saveFolded();
+  await act('POST', '/api/move', payload);
 }
 
 function pickFolder() {
@@ -738,7 +1066,7 @@ document.querySelectorAll('.nav').forEach(node => node.onclick = () => {
 window.addEventListener('hashchange', route);
 window.addEventListener('resize', () => { closeFloating(); reportDragArea(); });
 window.addEventListener('focus', () => {
-  if (!document.querySelector('.editor, .menu')) load();
+  if (!document.querySelector('.editor, .menu') && !document.body.classList.contains('dragging')) load();
   loadDays();
 });
 (async () => {

@@ -165,6 +165,9 @@ class Board:
                 result = change_todo(self.config, 'create', **data)
             elif method == 'PATCH' and parsed.path.startswith('/api/todos/'):
                 result = change_todo(self.config, 'update', identity=parsed.path.rsplit('/', 1)[1], **data)
+            elif route == ('POST', '/api/move'):
+                result = change_todo(self.config, 'move', identity=data.get('id'),
+                                     **{key: value for key, value in data.items() if key != 'id'})
             elif route == ('POST', '/api/delete'):
                 result = change_todo(self.config, 'delete', ids=[str(item) for item in data.get('ids', [])])
             elif route == ('POST', '/api/pick-folder'):

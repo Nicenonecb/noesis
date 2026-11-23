@@ -153,6 +153,8 @@ def test_prefs_persist_in_data_dir_and_reject_unknown_values(config):
     again = Board(config, 9999)
     saved = json.loads(request(again, 'GET', '/api/prefs')[1])
     assert saved['lang'] == 'en' and saved['widths'] == {'title': 320}
+    assert request(board, 'PUT', '/api/prefs', {'folded': ['done', 'done_today']})[0] == 200
+    assert json.loads(request(again, 'GET', '/api/prefs')[1])['folded'] == ['done', 'done_today']
     for bad in ({'lang': 'fr'}, {'view': 'admin'}, {'folded': ['archived']}, {'expanded': ['x' * 40]}, {'theme': 'dark'},
                 {'widths': {'title': 20}}, {'widths': {'id': 100}}, {'widths': {'tag': 100.5}}, {'widths': []}):
         assert request(board, 'PUT', '/api/prefs', bad)[0] == 400

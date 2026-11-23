@@ -11,7 +11,7 @@ PAGE = r'''<!doctype html>
   --text: #1f2329; --text-2: #646a73; --text-3: #8f959e; --line: #dee0e3; --line-2: #eff0f1;
   --bg: #ffffff; --bg-hover: #f5f6f7; --bg-side: #f5f6f7; --blue: #3370ff; --blue-bg: #e1eaff;
   --red: #d83931; --orange: #ff8800; --yellow: #dc9b04; --gray: #8f959e; --green: #34c724;
-  --row: 34px;
+  --row: 42px;
 }
 * { box-sizing: border-box; scrollbar-width: none; }
 *::-webkit-scrollbar { display: none; width: 0; height: 0; }
@@ -50,14 +50,21 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .btn.primary:hover { background: #4e83fd; }
 .btn.danger { color: var(--red); }
 .btn[hidden] { display: none; }
+.today-pill { height: 30px; padding: 0 11px; border-radius: 15px; border: 1px solid var(--line-2);
+  background: var(--bg-hover); color: var(--text-3); font-size: 12px; white-space: nowrap; flex: none;
+  font-variant-numeric: tabular-nums; }
+.today-pill:empty { display: none; }
+.today-pill:disabled { cursor: default; }
+.today-pill.has-done { background: #e8f8e6; border-color: #cbeec6; color: #1f7a17; font-weight: 500; }
+.today-pill.has-done:hover { background: #daf3d7; }
 .wrap { flex: 1; min-height: 0; overflow: auto; padding: 0 0 32px; }
 
 /* Columns share the window width; minimums only overflow on very narrow windows. */
-.grid { width: 100%; min-width: 1150px; }
+.grid { width: 100%; min-width: 1150px; font-size: 14px; }
 .row { display: flex; min-height: var(--row); }
 .cell { border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); padding: 0 8px;
   display: flex; align-items: center; gap: 6px; overflow: hidden; background: inherit; }
-.c-title { flex: 3 1 0; min-width: 240px; } .c-tag { flex: 0 0 116px; } .c-status { flex: 0 0 82px; }
+.c-title { flex: 3 1 0; min-width: 300px; } .c-tag { flex: 0 0 116px; } .c-status { flex: 0 0 82px; }
 .c-cat { flex: 1 1 0; min-width: 100px; } .c-note { flex: 2 1 0; min-width: 120px; } .c-folder { flex: 2 1 0; min-width: 140px; }
 .c-dur { flex: 0 0 146px; } .c-upd { flex: 0 0 100px; } .c-crt { flex: 0 0 100px; border-right: 0; }
 .c-parent { flex: 1 1 0; min-width: 100px; border-right: 0; display: none; }
@@ -65,7 +72,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 @media (min-width: 1600px) { .c-parent { display: flex; } .c-crt { border-right: 1px solid var(--line-2); } }
 .cell.frozen { position: sticky; left: 0; z-index: 2; border-right: 1px solid var(--line); }
 .head { position: sticky; top: 0; z-index: 4; background: #fff; }
-.head .cell { height: 36px; color: var(--text-2); border-bottom: 1px solid var(--line); background: #fff; }
+.head .cell { height: 40px; color: var(--text-2); border-bottom: 1px solid var(--line); background: #fff; }
 .head .cell.frozen { z-index: 5; }
 .head .cell { position: relative; }
 .grip { position: absolute; top: 0; right: -1px; width: 7px; height: 100%; cursor: col-resize; z-index: 1; }
@@ -77,23 +84,26 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .data:hover, .data.selected { background: var(--bg-hover); }
 .data .cell.editable { cursor: pointer; }
 .data .cell.editable:hover { box-shadow: inset 0 0 0 1px #bacefd; }
-.idx { width: 28px; flex: none; color: var(--text-3); font-size: 12px; text-align: center; }
-.idx input { display: none; margin: 0; }
+.idx { width: 40px; flex: none; color: var(--text-3); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+.idx input { display: none; margin: 0; width: 16px; height: 16px; cursor: pointer; vertical-align: middle; }
 .data:hover .idx .num, .data.selected .idx .num { display: none; }
 .data:hover .idx input, .data.selected .idx input, .head .idx input { display: inline-block; }
-.caret { width: 16px; flex: none; color: var(--text-2); font-size: 10px; text-align: center; }
-.caret button { width: 16px; height: 16px; border-radius: 3px; }
+.caret { width: 22px; flex: none; color: var(--text-2); font-size: 11px; text-align: center; }
+.caret button { width: 22px; height: 22px; border-radius: 4px; }
 .caret button:hover { background: var(--line); }
 .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .title.empty { color: var(--text-3); }
-.subcount { color: var(--text-3); font-size: 12px; flex: none; }
-.rowtools { display: none; gap: 4px; flex: none; }
+.done-mark { color: #1f7a17; font-size: 12px; font-weight: 600; flex: none; }
+.parent-ref { color: var(--text-3); font-size: 12px; flex: 0 1 auto; max-width: 40%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.subcount { color: var(--text-3); font-size: 13px; flex: none; }
+.rowtools { display: none; gap: 6px; flex: none; }
 .data:hover .rowtools { display: flex; }
-.tool { height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff;
-  color: var(--text-2); font-size: 12px; white-space: nowrap; }
+.tool { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff;
+  color: var(--text-2); font-size: 13px; white-space: nowrap; }
 .tool:hover { color: var(--blue); border-color: var(--blue); }
-.pill { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 8px; border-radius: 10px;
-  font-size: 12px; white-space: nowrap; line-height: 20px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pill { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 10px; border-radius: 12px;
+  font-size: 13px; white-space: nowrap; line-height: 24px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .tag-urgent_important { background: var(--red); color: #fff; }
 .tag-important { background: var(--orange); color: #fff; }
 .tag-urgent { background: var(--yellow); color: #fff; }
@@ -101,28 +111,29 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .st-todo { background: var(--blue-bg); color: #1f2329; }
 .st-doing { background: #fff1d6; color: #8f5c00; }
 .st-done { background: var(--green); color: #fff; }
+.st-done-today { background: #e8f8e6; color: #1f7a17; }
 .muted { color: var(--text-3); }
 .clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .folders { display: flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; flex: 1; }
-.chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; max-width: 150px; padding: 0 6px;
-  border-radius: 4px; background: #f0f1f2; font-size: 12px; flex: none; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; max-width: 150px; padding: 0 8px;
+  border-radius: 4px; background: #f0f1f2; font-size: 13px; flex: none; }
 .chip:hover { background: var(--blue-bg); color: var(--blue); }
 .chip .x { display: none; color: var(--text-3); padding: 0 1px; }
 .chip:hover .x { display: inline; }
 .chip .x:hover { color: var(--red); }
 .chip.missing { text-decoration: line-through; color: var(--text-3); }
-.add-folder { visibility: hidden; flex: none; width: 22px; height: 22px; border-radius: 4px; color: var(--text-2); font-size: 15px; }
+.add-folder { visibility: hidden; flex: none; width: 26px; height: 26px; border-radius: 4px; color: var(--text-2); font-size: 15px; }
 .data:hover .add-folder { visibility: visible; }
 .add-folder:hover { background: var(--line); color: var(--blue); }
-.group { margin: 12px 0 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.ghead { display: flex; height: 36px; background: #fff; }
+.group { margin: 12px 0 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); scroll-margin-top: 44px; }
+.ghead { display: flex; height: 44px; background: #fff; }
 .ghead .cell { border-bottom: 0; }
 .ghead .cell.frozen { cursor: pointer; }
 .cell.rest { flex: 1 1 0; border-right: 0; }
-.ghead .fold { width: 20px; color: var(--text-2); font-size: 10px; flex: none; }
-.ghead .count { margin-left: auto; color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.ghead .fold { width: 24px; height: 24px; color: var(--text-2); font-size: 11px; flex: none; }
+.ghead .count { margin-left: auto; color: var(--text-3); font-size: 13px; white-space: nowrap; }
 .ghead + .rows .data:first-child .cell, .ghead + .rows .addrow .cell { border-top: 1px solid var(--line-2); }
-.addrow .cell { color: var(--text-3); font-size: 16px; border-bottom: 0; }
+.addrow .cell { color: var(--text-3); font-size: 20px; border-bottom: 0; }
 .addrow .cell.frozen { cursor: pointer; }
 .addrow .cell.frozen:hover { color: var(--blue); background: var(--bg-hover); }
 .collapsed .rows { display: none; }
@@ -188,6 +199,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   <div class="top">
     <h1 data-t="todo"></h1><span class="sub" data-t="todoSub"></span>
     <span class="spacer"></span>
+    <button class="today-pill" id="today-pill"></button>
     <input class="search" id="search" data-t-placeholder="search">
     <button class="btn danger" id="bulk" hidden></button>
     <button class="btn primary" id="create" data-t="create"></button>
@@ -225,6 +237,8 @@ const TEXT = {
       dur: '任务耗时', upd: '更新时间', crt: '创建时间', parent: '父记录'},
     tags: {urgent_important: '重要紧急', important: '重要不紧急', urgent: '紧急不重要', neither: '不重要不紧急'},
     statuses: {todo: '未开始', doing: '进行中', done: '已完成'},
+    doneToday: '今日完成', doneEarlier: '历史已完成', jumpToday: '跳转到今日完成',
+    todayPill: count => (count ? '✓ 今日完成 ' : '今日完成 ') + count, doneAt: time => '完成于今日 ' + time,
     duration: (done, d) => (done ? '已完成' : '未完成') + '，耗时' + d + '天',
     untitled: '未命名任务', subtask: '＋ 子任务', delete: '删除', clear: '清除', records: n => n + ' 条记录',
     newIn: s => '在「' + s + '」中新建任务', emptyTodo: '还没有任务。点击右上角「新建任务」，或在分组底部点击 ＋。',
@@ -242,6 +256,8 @@ const TEXT = {
       dur: 'Time spent', upd: 'Updated', crt: 'Created', parent: 'Parent'},
     tags: {urgent_important: 'Critical', important: 'Important', urgent: 'Urgent', neither: 'Low'},
     statuses: {todo: 'To do', doing: 'Doing', done: 'Done'},
+    doneToday: 'Done today', doneEarlier: 'Earlier done', jumpToday: 'Jump to done today',
+    todayPill: count => (count ? '✓ Done today ' : 'Done today ') + count, doneAt: time => 'Completed today at ' + time,
     duration: (done, d) => (done ? 'Done' : 'Open') + ' · ' + d + (d === 1 ? ' day' : ' days'),
     untitled: 'Untitled task', subtask: '＋ Subtask', delete: 'Delete', clear: 'Clear', records: n => n + (n === 1 ? ' record' : ' records'),
     newIn: s => 'New task in “' + s + '”', emptyTodo: 'No tasks yet. Click “New task” or the ＋ under a group.',
@@ -271,7 +287,7 @@ const ICONS = {
 const COLS = [['tag', 'select'], ['status', 'select'], ['cat', 'select'], ['note', 'text'], ['folder', 'folder'],
   ['dur', 'timer'], ['upd', 'date'], ['crt', 'date'], ['parent', 'parent']];
 // Default widths match the stylesheet minimums; a dragged column becomes fixed and the grid grows with it.
-const BASE_WIDTH = {title: 240, tag: 116, status: 82, cat: 100, note: 120, folder: 140, dur: 146, upd: 100, crt: 100};
+const BASE_WIDTH = {title: 300, tag: 116, status: 82, cat: 100, note: 120, folder: 140, dur: 146, upd: 100, crt: 100};
 const MIN_WIDTH = 60, MAX_WIDTH = 1200;
 function applyWidths() {
   const widths = prefs.widths || {};
@@ -352,6 +368,19 @@ function shortDate(iso) {
   const [y, m, d] = iso.slice(0, 10).split('-');
   return (state.now && state.now.startsWith(y) ? '' : y + '/') + m + '/' + d;
 }
+function shortTime(iso) {
+  return iso && iso.length >= 16 ? iso.slice(11, 16) : shortDate(iso);
+}
+function isDoneToday(item) {
+  const today = (state.now || '').slice(0, 10);
+  return Boolean(today && item.status === 'done' && (item.done_at || '').slice(0, 10) === today);
+}
+function hasDoneTodayAncestor(item, byId) {
+  for (let parent = byId.get(item.parent); parent; parent = byId.get(parent.parent)) {
+    if (isDoneToday(parent)) return true;
+  }
+  return false;
+}
 function duration(item) {
   const end = item.status === 'done' && item.done_at ? item.done_at : state.now;
   const days = Math.max(0, (new Date(end) - new Date(item.created_at)) / 86400000);
@@ -400,7 +429,8 @@ function headRow() {
   return row;
 }
 
-function dataRow(item, depth, number) {
+function dataRow(item, depth, number, options = {}) {
+  const inToday = Boolean(options.today && isDoneToday(item));
   const row = el('div', 'row data' + (selected.has(item.id) ? ' selected' : ''));
   const first = el('div', 'cell frozen c-title editable');
   const idx = el('span', 'idx');
@@ -419,6 +449,13 @@ function dataRow(item, depth, number) {
     caret.append(toggle);
   }
   first.append(caret);
+  const parent = state.todos.find(other => other.id === item.parent);
+  if (inToday) first.append(el('span', 'done-mark', '✓'));
+  if (options.today && depth === 0 && parent) {
+    const ref = el('span', 'parent-ref', (parent.title || T().untitled) + ' /');
+    ref.title = parent.title || T().untitled;
+    first.append(ref);
+  }
   first.append(el('span', 'title' + (item.title ? '' : ' empty'), item.title || T().untitled));
   const tools = el('span', 'rowtools');
   const sub = el('button', 'tool', T().subtask);
@@ -449,9 +486,11 @@ function dataRow(item, depth, number) {
   note.title = item.note;
   note.onclick = () => editText(note, item, 'note', 2000, true);
   row.append(tag, status, cat, note, folderCell(item));
-  row.append(el('div', 'cell c-dur', duration(item)), el('div', 'cell c-upd', shortDate(item.updated_at)),
+  const doneTime = inToday ? shortTime(item.done_at) : '';
+  const updCell = el('div', 'cell c-upd', doneTime || shortDate(item.updated_at));
+  if (doneTime) updCell.title = T().doneAt(doneTime);
+  row.append(el('div', 'cell c-dur', duration(item)), updCell,
     el('div', 'cell c-crt', shortDate(item.created_at)));
-  const parent = state.todos.find(other => other.id === item.parent);
   const pc = el('div', 'cell c-parent'); if (parent) pc.append(el('span', 'clip', parent.title || T().untitled));
   row.append(pc);
   return row;
@@ -489,35 +528,62 @@ function render() {
   for (const id of [...selected]) if (!state.todos.some(t => t.id === id)) selected.delete(id);
   const bulk = document.getElementById('bulk');
   bulk.hidden = selected.size === 0; bulk.textContent = T().bulk(selected.size);
-  reportDragArea();
   grid.replaceChildren(headRow());
-  const ids = new Set(state.todos.map(t => t.id));
-  const roots = state.todos.filter(item => !item.parent || !ids.has(item.parent));
-  for (const key of ORDER) {
-    const top = roots.filter(item => item.status === key && matches(item, query));
+  const byId = new Map(state.todos.map(item => [item.id, item]));
+  const roots = state.todos.filter(item => !item.parent || !byId.has(item.parent));
+  const todayAll = state.todos.filter(isDoneToday);
+  const todayCount = todayAll.length;
+  const todayPill = document.getElementById('today-pill');
+  todayPill.textContent = T().todayPill(todayCount);
+  todayPill.classList.toggle('has-done', todayCount > 0);
+  todayPill.title = todayCount > 0 ? T().jumpToday : '';
+  todayPill.disabled = todayCount === 0;
+  reportDragArea();
+  const renderGroup = ({key, pillClass, label, count, items, addStatus, today, id}) => {
     const group = el('div', 'group' + (folded.has(key) ? ' collapsed' : ''));
+    if (id) group.id = id;
     const head = el('div', 'ghead');
     const left = el('div', 'cell frozen c-title');
-    const count = top.reduce((n, item) => n + 1 + descendants(item.id), 0);
-    left.append(el('button', 'fold', folded.has(key) ? '▶' : '▼'), el('span', 'pill st-' + key, T().statuses[key]),
+    left.append(el('button', 'fold', folded.has(key) ? '▶' : '▼'), el('span', 'pill ' + pillClass, label),
       el('span', 'count', T().records(count)));
     left.onclick = () => { folded.has(key) ? folded.delete(key) : folded.add(key); saveFolded(); render(); };
     head.append(left, el('div', 'cell rest'));
     const rows = el('div', 'rows');
     let number = 0;
     const walk = (item, depth) => {
-      rows.append(dataRow(item, depth, ++number));
+      rows.append(dataRow(item, depth, ++number, {today}));
       if (expanded.has(item.id)) children(item.id).filter(c => matches(c, query)).forEach(child => walk(child, depth + 1));
     };
-    top.forEach(item => walk(item, 0));
-    const addRow = el('div', 'row addrow');
-    const plus = el('div', 'cell frozen c-title', '＋'); plus.title = T().newIn(T().statuses[key]);
-    plus.onclick = () => createIn(key);
-    addRow.append(plus, el('div', 'cell rest'));
-    rows.append(addRow);
+    items.forEach(item => walk(item, 0));
+    if (addStatus) {
+      const addRow = el('div', 'row addrow');
+      const plus = el('div', 'cell frozen c-title', '＋'); plus.title = T().newIn(T().statuses[addStatus]);
+      plus.onclick = () => createIn(addStatus);
+      addRow.append(plus, el('div', 'cell rest'));
+      rows.append(addRow);
+    }
     group.append(head, rows);
-    grid.append(group);
+    return group;
+  };
+  for (const key of ['todo', 'doing']) {
+    const top = roots.filter(item => item.status === key && matches(item, query));
+    const count = top.reduce((sum, item) => sum + 1 + descendants(item.id), 0);
+    grid.append(renderGroup({key, pillClass: 'st-' + key, label: T().statuses[key], count, items: top, addStatus: key}));
   }
+  if (todayCount > 0) {
+    const todayTop = todayAll
+      .filter(item => !hasDoneTodayAncestor(item, byId) && matches(item, query))
+      .sort((left, right) => (right.done_at || '').localeCompare(left.done_at || ''));
+    const countDoneToday = item => (isDoneToday(item) ? 1 : 0)
+      + children(item.id).reduce((sum, child) => sum + countDoneToday(child), 0);
+    const count = todayTop.reduce((sum, item) => sum + countDoneToday(item), 0);
+    grid.append(renderGroup({key: 'done_today', id: 'group-done-today', pillClass: 'st-done-today',
+      label: T().doneToday, count, items: todayTop, addStatus: null, today: true}));
+  }
+  const earlier = roots.filter(item => item.status === 'done' && !isDoneToday(item) && matches(item, query));
+  const earlierCount = earlier.reduce((sum, item) => sum + 1 + descendants(item.id), 0);
+  grid.append(renderGroup({key: 'done', pillClass: 'st-done',
+    label: todayCount > 0 ? T().doneEarlier : T().statuses.done, count: earlierCount, items: earlier, addStatus: 'done'}));
   document.getElementById('todo-count').textContent = state.todos.filter(t => t.status !== 'done').length || '';
   if (!state.todos.length) grid.append(el('div', 'empty-board', T().emptyTodo));
 }
@@ -529,7 +595,8 @@ function pickFolder() {
   return new Promise(resolve => { window.noesisPicked = resolve; bridge.postMessage({action: 'pickFolder'}); });
 }
 async function createIn(status) {
-  if (folded.delete(status)) saveFolded();
+  const target = status === 'done' ? 'done_today' : status;
+  if (folded.delete(target)) saveFolded();
   const made = await act('POST', '/api/todos', {status});
   if (made) editTextById(made.id, 'title');
 }
@@ -552,8 +619,10 @@ function editText(cell, item, field, limit, multiline) {
     document.body.append(list); input.setAttribute('list', 'cats');
   }
   const box = cell.getBoundingClientRect();
-  const width = Math.min(Math.max(box.width, multiline ? 360 : 160), innerWidth - 16);
-  input.style.left = Math.min(box.left, innerWidth - width - 8) + 'px'; input.style.top = box.top + 'px';
+  // Keep the row number visible: the title editor starts right after the index column.
+  const left = field === 'title' ? (cell.querySelector('.idx')?.getBoundingClientRect().right ?? box.left) : box.left;
+  const width = Math.min(Math.max(box.right - left, multiline ? 360 : 160), innerWidth - 16);
+  input.style.left = Math.min(left, innerWidth - width - 8) + 'px'; input.style.top = box.top + 'px';
   input.style.width = width + 'px'; input.style.minHeight = (multiline ? 120 : box.height) + 'px';
   document.body.append(input); input.focus(); input.select();
   let done = false;
@@ -562,9 +631,14 @@ function editText(cell, item, field, limit, multiline) {
     if (save && input.value.trim() !== (item[field] || '')) act('PATCH', '/api/todos/' + item.id, {[field]: input.value});
   };
   input.onblur = () => finish(true);
+  // WebKit fires compositionend before the IME-confirming Enter keydown, so isComposing alone is not enough.
+  let composing = false, composedAt = 0;
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => { composing = false; composedAt = performance.now(); });
   input.onkeydown = event => {
-    if (event.key === 'Escape') finish(false);
-    if (event.key === 'Enter' && !event.isComposing && (!multiline || event.metaKey || event.ctrlKey)) { event.preventDefault(); finish(true); }
+    const ime = composing || event.isComposing || event.keyCode === 229 || performance.now() - composedAt < 100;
+    if (event.key === 'Escape' && !ime) finish(false);
+    if (event.key === 'Enter' && !ime && (!multiline || event.metaKey || event.ctrlKey)) { event.preventDefault(); finish(true); }
   };
 }
 function choose(cell, options, onPick, clearable) {
@@ -587,7 +661,11 @@ function choose(cell, options, onPick, clearable) {
 }
 async function remove(ids) {
   const total = ids.reduce((n, id) => n + 1 + descendants(id), 0);
-  if (!confirm(T().confirmDelete(total))) return;
+  // Blank rows (no content, no subtasks) go without asking; anything holding data still confirms.
+  const blank = item => item && !(item.title || '').trim() && !item.tag && !(item.category || '').trim()
+    && !(item.note || '').trim() && !(item.folders || []).length && !children(item.id).length;
+  const allBlank = ids.every(id => blank(state.todos.find(t => t.id === id)));
+  if (!allBlank && !confirm(T().confirmDelete(total))) return;
   ids.forEach(id => selected.delete(id));
   await act('POST', '/api/delete', {ids});
 }
@@ -646,6 +724,10 @@ function setLanguage(lang) {
 
 document.getElementById('create').onclick = () => createIn('todo');
 document.getElementById('bulk').onclick = () => remove([...selected]);
+document.getElementById('today-pill').onclick = () => {
+  if (folded.delete('done_today')) { saveFolded(); render(); }
+  document.getElementById('group-done-today')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+};
 document.getElementById('search').oninput = render;
 document.getElementById('wrap').addEventListener('scroll', closeFloating);
 document.querySelectorAll('#lang button').forEach(node => node.onclick = () => setLanguage(node.dataset.lang));

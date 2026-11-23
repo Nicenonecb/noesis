@@ -24,6 +24,7 @@ from .todo_page import PAGE
 
 MAX_BODY = 64 * 1024
 DEFAULT_PREFS = {'lang': 'zh', 'view': 'todo', 'folded': ['done'], 'expanded': [], 'widths': {}}
+GROUPS = (*STATUSES, 'done_today')
 COLUMNS = ('title', 'tag', 'status', 'cat', 'note', 'folder', 'dur', 'upd', 'crt', 'parent')
 DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 FRONT_MATTER = re.compile(r'\A---\n.*?\n---\n', re.S)
@@ -113,7 +114,7 @@ class Board:
     def save_prefs(self, changes):
         """Interface choices live in the data dir: the app's loopback origin changes port every launch."""
         checks = {'lang': lambda v: v in ('zh', 'en'), 'view': lambda v: v in ('todo', 'daily', 'settings'),
-                  'folded': lambda v: isinstance(v, list) and set(v) <= set(STATUSES),
+                  'folded': lambda v: isinstance(v, list) and set(v) <= set(GROUPS),
                   'expanded': lambda v: isinstance(v, list) and len(v) <= 500
                   and all(isinstance(i, str) and len(i) <= 32 for i in v),
                   'widths': lambda v: isinstance(v, dict) and set(v) <= set(COLUMNS)
